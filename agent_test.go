@@ -940,5 +940,17 @@ func TestMain(m *testing.M) {
 		panic(fmt.Sprintf("Failed to connect to memcached bucket!: %v", err))
 	}
 
-	os.Exit(m.Run())
+	result := m.Run()
+
+	err = globalAgent.Close()
+	if err != nil {
+		log.Fatalf("Failed to shut down global agent: %s", err)
+	}
+
+	err = globalMemdAgent.Close()
+	if err != nil {
+		log.Fatalf("Failed to shut down global memcached agent: %s", err)
+	}
+
+	os.Exit(result)
 }
