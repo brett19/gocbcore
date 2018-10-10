@@ -219,6 +219,12 @@ const (
 	// processing your request.
 	StatusTmpFail = StatusCode(0x86)
 
+	// StatusCollectionUnknown occurs when a Collection cannot be found.
+	StatusCollectionUnknown = StatusCode(0x88)
+
+	// StatusScopeUnknown occurs when a Scope cannot be found.
+	StatusScopeUnknown = StatusCode(0x8c)
+
 	// StatusSubDocPathNotFound occurs when a sub-document operation targets a path
 	// which does not exist in the specifie document.
 	StatusSubDocPathNotFound = StatusCode(0xc0)
