@@ -311,6 +311,8 @@ func (client *memdClient) run() {
 				fallthrough
 			case cmdDcpSnapshotMarker:
 				fallthrough
+			case cmdDcpEvent:
+				fallthrough
 			case cmdDcpStreamEnd:
 				dcpBufferQ <- resp
 				continue

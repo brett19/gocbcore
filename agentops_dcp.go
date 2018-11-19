@@ -2,6 +2,7 @@ package gocbcore
 
 import (
 	"encoding/binary"
+	"encoding/json"
 )
 
 // SnapshotState represents the state of a particular cluster snapshot.
@@ -32,6 +33,22 @@ type StreamObserver interface {
 	End(vbId uint16, err error)
 }
 
+type CollectionStreamObserver interface {
+	SnapshotMarker(startSeqNo, endSeqNo uint64, vbId uint16, snapshotType SnapshotState)
+	Mutation(seqNo, revNo uint64, flags, expiry, lockTime uint32, cas uint64, datatype uint8, vbId uint16, key, value []byte)
+	Deletion(seqNo, revNo, cas uint64, datatype uint8, vbId uint16, key, value []byte)
+	Expiration(seqNo, revNo, cas uint64, vbId uint16, key []byte)
+	End(vbId uint16, err error)
+	Event(seqNo uint64, eventCode StreamEventCode, version uint8, vbId uint16, key, value []byte)
+}
+
+type CollectionStreamFilter struct {
+	ManifestUid string   `json:"uid,omitempty"`
+	Collections []string `json:"collections,omitempty"`
+	Scope       string   `json:"scope,omitempty"`
+	StreamId    int      `json:"sid,omitempty"`
+}
+
 // OpenStreamCallback is invoked with the results of `OpenStream` operations.
 type OpenStreamCallback func([]FailoverEntry, error)
 
@@ -49,6 +66,117 @@ type VbSeqNoEntry struct {
 
 // GetVBucketSeqnosCallback is invoked with the results of `GetVBucketSeqnos` operations.
 type GetVBucketSeqnosCallback func([]VbSeqNoEntry, error)
+
+// OpenStream opens a DCP stream for a particular VBucket.
+func (agent *Agent) OpenCollectionStream(vbId uint16, flags DcpStreamAddFlag, vbUuid VbUuid, startSeqNo,
+	endSeqNo, snapStartSeqNo, snapEndSeqNo SeqNo, evtHandler CollectionStreamObserver, filter *CollectionStreamFilter, cb OpenStreamCallback) (PendingOp, error) {
+	var req *memdQRequest
+	handler := func(resp *memdQResponse, _ *memdQRequest, err error) {
+		if resp != nil && resp.Magic == resMagic {
+			// This is the response to the open stream request.
+			if err != nil {
+				req.Cancel()
+
+				// All client errors are handled by the StreamObserver
+				cb(nil, err)
+				return
+			}
+
+			numEntries := len(resp.Value) / 16
+			entries := make([]FailoverEntry, numEntries)
+			for i := 0; i < numEntries; i++ {
+				entries[i] = FailoverEntry{
+					VbUuid: VbUuid(binary.BigEndian.Uint64(resp.Value[i*16+0:])),
+					SeqNo:  SeqNo(binary.BigEndian.Uint64(resp.Value[i*16+8:])),
+				}
+			}
+
+			cb(entries, nil)
+			return
+		}
+
+		if err != nil {
+			req.Cancel()
+			evtHandler.End(vbId, err)
+			return
+		}
+
+		// This is one of the stream events
+		switch resp.Opcode {
+		case cmdDcpSnapshotMarker:
+			vbId := uint16(resp.Vbucket)
+			newStartSeqNo := binary.BigEndian.Uint64(resp.Extras[0:])
+			newEndSeqNo := binary.BigEndian.Uint64(resp.Extras[8:])
+			snapshotType := binary.BigEndian.Uint32(resp.Extras[16:])
+			evtHandler.SnapshotMarker(newStartSeqNo, newEndSeqNo, vbId, SnapshotState(snapshotType))
+		case cmdDcpMutation:
+			vbId := uint16(resp.Vbucket)
+			seqNo := binary.BigEndian.Uint64(resp.Extras[0:])
+			revNo := binary.BigEndian.Uint64(resp.Extras[8:])
+			flags := binary.BigEndian.Uint32(resp.Extras[16:])
+			expiry := binary.BigEndian.Uint32(resp.Extras[20:])
+			lockTime := binary.BigEndian.Uint32(resp.Extras[24:])
+			evtHandler.Mutation(seqNo, revNo, flags, expiry, lockTime, resp.Cas, resp.Datatype, vbId, resp.Key, resp.Value)
+		case cmdDcpDeletion:
+			vbId := uint16(resp.Vbucket)
+			seqNo := binary.BigEndian.Uint64(resp.Extras[0:])
+			revNo := binary.BigEndian.Uint64(resp.Extras[8:])
+			evtHandler.Deletion(seqNo, revNo, resp.Cas, resp.Datatype, vbId, resp.Key, resp.Value)
+		case cmdDcpExpiration:
+			vbId := uint16(resp.Vbucket)
+			seqNo := binary.BigEndian.Uint64(resp.Extras[0:])
+			revNo := binary.BigEndian.Uint64(resp.Extras[8:])
+			evtHandler.Expiration(seqNo, revNo, resp.Cas, vbId, resp.Key)
+		case cmdDcpEvent:
+			vbId := uint16(resp.Vbucket)
+			seqNo := binary.BigEndian.Uint64(resp.Extras[0:])
+			eventCode := StreamEventCode(binary.BigEndian.Uint32(resp.Extras[8:]))
+			version := resp.Extras[12]
+			evtHandler.Event(seqNo, eventCode, version, vbId, resp.Key, resp.Value)
+		case cmdDcpStreamEnd:
+			vbId := uint16(resp.Vbucket)
+			code := streamEndStatus(binary.BigEndian.Uint32(resp.Extras[0:]))
+			evtHandler.End(vbId, getStreamEndError(code))
+			req.Cancel()
+		}
+	}
+
+	extraBuf := make([]byte, 48)
+	binary.BigEndian.PutUint32(extraBuf[0:], uint32(flags))
+	binary.BigEndian.PutUint32(extraBuf[4:], 0)
+	binary.BigEndian.PutUint64(extraBuf[8:], uint64(startSeqNo))
+	binary.BigEndian.PutUint64(extraBuf[16:], uint64(endSeqNo))
+	binary.BigEndian.PutUint64(extraBuf[24:], uint64(vbUuid))
+	binary.BigEndian.PutUint64(extraBuf[32:], uint64(snapStartSeqNo))
+	binary.BigEndian.PutUint64(extraBuf[40:], uint64(snapEndSeqNo))
+
+	var val []byte
+	val = nil
+	if filter != nil {
+		var err error
+		val, err = json.Marshal(filter)
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	req = &memdQRequest{
+		memdPacket: memdPacket{
+			Magic:    reqMagic,
+			Opcode:   cmdDcpStreamReq,
+			Datatype: 0,
+			Cas:      0,
+			Extras:   extraBuf,
+			Key:      nil,
+			Value:    val,
+			Vbucket:  vbId,
+		},
+		Callback:   handler,
+		ReplicaIdx: 0,
+		Persistent: true,
+	}
+	return agent.dispatchOp(req)
+}
 
 // OpenStream opens a DCP stream for a particular VBucket.
 func (agent *Agent) OpenStream(vbId uint16, flags DcpStreamAddFlag, vbUuid VbUuid, startSeqNo, endSeqNo, snapStartSeqNo, snapEndSeqNo SeqNo, evtHandler StreamObserver, cb OpenStreamCallback) (PendingOp, error) {
