@@ -406,6 +406,7 @@ type LookupInOptions struct {
 	Key          []byte
 	Flags        SubdocDocFlag
 	Ops          []SubDocOp
+	CollectionID uint32
 	TraceContext opentracing.SpanContext
 }
 
@@ -498,6 +499,8 @@ func (agent *Agent) LookupInEx(opts LookupInOptions, cb LookupInExCallback) (Pen
 		extraBuf = append(extraBuf, uint8(opts.Flags))
 	}
 
+	encodedKey := agent.createEncodedKey(opts.Key, opts.CollectionID)
+
 	req := &memdQRequest{
 		memdPacket: memdPacket{
 			Magic:    reqMagic,
@@ -505,7 +508,7 @@ func (agent *Agent) LookupInEx(opts LookupInOptions, cb LookupInExCallback) (Pen
 			Datatype: 0,
 			Cas:      0,
 			Extras:   extraBuf,
-			Key:      opts.Key,
+			Key:      encodedKey,
 			Value:    valueBuf,
 		},
 		Callback:         handler,
@@ -521,6 +524,7 @@ type MutateInOptions struct {
 	Cas          Cas
 	Expiry       uint32
 	Ops          []SubDocOp
+	CollectionID uint32
 	TraceContext opentracing.SpanContext
 }
 
@@ -642,6 +646,8 @@ func (agent *Agent) MutateInEx(opts MutateInOptions, cb MutateInExCallback) (Pen
 		extraBuf = append(extraBuf, uint8(opts.Flags))
 	}
 
+	encodedKey := agent.createEncodedKey(opts.Key, opts.CollectionID)
+
 	req := &memdQRequest{
 		memdPacket: memdPacket{
 			Magic:    reqMagic,
@@ -649,7 +655,7 @@ func (agent *Agent) MutateInEx(opts MutateInOptions, cb MutateInExCallback) (Pen
 			Datatype: 0,
 			Cas:      uint64(opts.Cas),
 			Extras:   extraBuf,
-			Key:      opts.Key,
+			Key:      encodedKey,
 			Value:    valueBuf,
 		},
 		Callback:         handler,
