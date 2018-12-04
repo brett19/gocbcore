@@ -146,6 +146,10 @@ func getMemdErrorDesc(code StatusCode) string {
 		return "server is busy, try again later"
 	case StatusTmpFail:
 		return "temporary failure occurred, try again later"
+	case StatusCollectionUnknown:
+		return "collection unknown"
+	case StatusScopeUnknown:
+		return "scope unknown"
 	case StatusSubDocPathNotFound:
 		return "sub-document path does not exist"
 	case StatusSubDocPathMismatch:
@@ -552,6 +556,12 @@ var (
 	// processing your request.
 	ErrTmpFail = newSimpleError(StatusTmpFail)
 
+	// ErrCollectionUnknown occurs when a Collection cannot be found.
+	ErrCollectionUnknown = newSimpleError(StatusCollectionUnknown)
+
+	// ErrScopeUnknown occurs when a Collection cannot be found.
+	ErrScopeUnknown = newSimpleError(StatusScopeUnknown)
+
 	// ErrSubDocPathNotFound occurs when a sub-document operation targets a path
 	// which does not exist in the specifie document.
 	ErrSubDocPathNotFound = newSimpleError(StatusSubDocPathNotFound)
@@ -691,6 +701,10 @@ func findMemdError(code StatusCode) (bool, error) {
 		return true, ErrBusy
 	case StatusTmpFail:
 		return true, ErrTmpFail
+	case StatusCollectionUnknown:
+		return true, ErrCollectionUnknown
+	case StatusScopeUnknown:
+		return true, ErrScopeUnknown
 	case StatusSubDocPathNotFound:
 		return true, ErrSubDocPathNotFound
 	case StatusSubDocPathMismatch:
