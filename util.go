@@ -35,6 +35,32 @@ func appendUleb128_32(b []byte, v uint32) []byte {
 	return b
 }
 
+func decodeleb128_32(b []byte) (u uint32, n uint8) {
+	l := uint8(len(b) & 0xff)
+	if l > 10 {
+		l = 10
+	}
+	var i uint8
+	for i = 0; i < l; i++ {
+		u |= uint32(b[i]&0x7f) << (7 * i)
+		if b[i]&0x80 == 0 {
+			n = uint8(i + 1)
+			return
+		}
+	}
+	return
+}
+
+// result = 0;
+// shift = 0;
+// while(true) {
+//   byte = next byte in input;
+//   result |= (low order 7 bits of byte) << shift;
+//   if (high order bit of byte == 0)
+//     break;
+//   shift += 7;
+// }
+
 func getCommandName(command commandCode) string {
 	switch command {
 	case cmdGet:

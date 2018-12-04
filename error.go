@@ -479,6 +479,10 @@ var (
 	// not keeping up with the rate of flow of DCP events sent by the server.
 	ErrStreamTooSlow = &streamEndError{streamEndTooSlow}
 
+	// ErrStreamFilterEmpty occurs when all of the collections for a DCP stream are
+	// dropped.
+	ErrStreamFilterEmpty = &streamEndError{streamEndFilterEmpty}
+
 	// ErrKeyNotFound occurs when an operation is performed on a key that does not exist.
 	ErrKeyNotFound = newSimpleError(StatusKeyNotFound)
 

@@ -56,6 +56,7 @@ const (
 	cmdDcpNoop                = commandCode(0x5c)
 	cmdDcpBufferAck           = commandCode(0x5d)
 	cmdDcpControl             = commandCode(0x5e)
+	cmdDcpEvent               = commandCode(0x5f)
 	cmdGetReplica             = commandCode(0x83)
 	cmdSelectBucket           = commandCode(0x89)
 	cmdObserveSeqNo           = commandCode(0x91)
@@ -303,6 +304,30 @@ const (
 	streamEndStateChanged = streamEndStatus(0x02)
 	streamEndDisconnected = streamEndStatus(0x03)
 	streamEndTooSlow      = streamEndStatus(0x04)
+	streamEndFilterEmpty  = streamEndStatus(0x07)
+)
+
+// StreamEventCode is the code for a DCP Stream event
+type StreamEventCode uint32
+
+const (
+	// CollectionCreate is the StreamEventCode for a collection create event
+	StreamEventCollectionCreate = StreamEventCode(0x00)
+
+	// CollectionDelete is the StreamEventCode for a collection delete event
+	StreamEventCollectionDelete = StreamEventCode(0x01)
+
+	// CollectionFlush is the StreamEventCode for a collection flush event
+	StreamEventCollectionFlush = StreamEventCode(0x02)
+
+	// ScopeCreate is the StreamEventCode for a scope create event
+	StreamEventScopeCreate = StreamEventCode(0x03)
+
+	// ScopeDelete is the StreamEventCode for a scope delete event
+	StreamEventScopeDelete = StreamEventCode(0x04)
+
+	// CollectionChanged is the StreamEventCode for a collection changed event
+	StreamEventCollectionChanged = StreamEventCode(0x05)
 )
 
 type bucketType int
