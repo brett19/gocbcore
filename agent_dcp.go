@@ -6,6 +6,8 @@ import (
 	"fmt"
 )
 
+// This should be refactored into it's own component.
+
 const (
 	noManifestUID = uint64(0xFFFFFFFFFFFFFFFF)
 	noScopeID     = uint32(0xFFFFFFFF)

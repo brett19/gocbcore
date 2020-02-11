@@ -7,6 +7,19 @@ import (
 	"time"
 )
 
+// This should be moved to its own component which strictly handles routing.
+
+// A portion of this file also handles bootstrap which should be... somewhere?
+
+// A portion of this file also handles connecting clients, which should actually
+// be implemented as a provider of sorts to the muxer?  This provider would be
+// responsible for all aspects of setting up a client in an authenticated way.
+
+// Configuration handling should be split into two components, one which is the
+// cluster-level pieces, and one that is the bucket-level pieces, which can be
+// watched and used independantly.  This is so that the components that do work
+// for GCCCP don't need to be changed around whenever we switch to CCCP.
+
 type memdInitFunc func(*syncClient, time.Time, *Agent) error
 
 func checkSupportsFeature(srvFeatures []HelloFeature, feature HelloFeature) bool {

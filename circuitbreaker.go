@@ -13,6 +13,18 @@ const (
 	circuitBreakerStateOpen
 )
 
+/*
+3 options here:
+1. Circuit Breakers exists in high-level library (gocb)
+2. Circuit Breakers exists as part of low-level (gocbcore)
+3. Circuit Breakers are implemented as 'middleware' component somehow.
+
+Doing middleware would be rather complicated, since this needs to occur
+AFTER the muxer has already muxed off the request to a specific server.
+
+TBD
+*/
+
 type circuitBreaker interface {
 	AllowsRequest() bool
 	MarkSuccessful()

@@ -6,6 +6,8 @@ import (
 	"testing"
 )
 
+// This should probably be hidden away somewhere, or at the very least use testify or somethign?
+
 const TestNumDocs = 5
 
 type testDoc struct {

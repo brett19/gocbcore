@@ -208,6 +208,9 @@ func (client *memdClient) resolveRequest(resp *memdQResponse) {
 	}
 
 	isCompressed := (resp.Datatype & uint8(DatatypeFlagCompressed)) != 0
+	// disableCompression makes is so that the packet is not decompressed, but we have no
+	// way to tell that it hasn't been decompressed?  This should be configurable in a
+	// better way than this.  Maybe...?
 	if isCompressed && !client.parent.disableDecompression {
 		newValue, err := snappy.Decode(nil, resp.Value)
 		if err != nil {
@@ -226,10 +229,14 @@ func (client *memdClient) resolveRequest(resp *memdQResponse) {
 		err = getKvStatusCodeError(resp.Status)
 	}
 
+	// I don't know who you are, but screw whoever added this.
 	if req.onCompletion != nil {
 		req.onCompletion(err)
 	}
 
+	// Processing lock and the fact that 'handleOpRoutingResp' is called for
+	// every single packet (AND ACTUALLY CHANGES STUFF IN ALL CASES) is bloody
+	// strange.  This should all be generalized as a sort of 'postExecutionHandler'
 	if client.parent == nil {
 		req.processingLock.Unlock()
 	} else {
@@ -253,6 +260,13 @@ func (client *memdClient) resolveRequest(resp *memdQResponse) {
 }
 
 func (client *memdClient) run() {
+	// We should try and get rid of the DCP buffer here.  It was added so that when we are blocking
+	// on operations (and we want to back-pressure the server), it was making it so that NOP packets
+	// were not being responded to.  This caused the server to disconnect us...
+	// Possible fix for this is that we move the DCP ack handling out to the place where the callback
+	// is actually invoked and make it the responsibility of the callback to actually signal that its
+	// done with the packet (push the queueing out one level, possible to another component which is,
+	// only responsible for that?)
 	dcpBufferQ := make(chan *memdQResponse)
 	dcpKillSwitch := make(chan bool)
 	dcpKillNotify := make(chan bool)

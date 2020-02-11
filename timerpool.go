@@ -7,6 +7,9 @@ import (
 
 var globalTimerPool sync.Pool
 
+// We should really investigate if this is even useful still?  Maybe go has
+// improved the performance of timers...
+
 // AcquireTimer acquires a time from a global pool of timers maintained by the library.
 func AcquireTimer(d time.Duration) *time.Timer {
 	tmr, isTmr := globalTimerPool.Get().(*time.Timer)

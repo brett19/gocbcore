@@ -265,6 +265,11 @@ func (agent *Agent) handleOpRoutingResp(resp *memdQResponse, req *memdQRequest, 
 
 	err = translateMemdError(err, req)
 
+	// We should consider handling these differently, currently there are multiple ways
+	// we are checking if an error should be retried (sometimes based on status, sometimes
+	// based on the error itself, like wat?)  Perhaps we should implement internal-only
+	// error codes?
+
 	// Handle potentially retrying the operation
 	if resp != nil && resp.Status == StatusNotMyVBucket {
 		if agent.handleNotMyVbucket(resp, req) {

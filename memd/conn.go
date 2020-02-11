@@ -7,6 +7,8 @@ import (
 	"time"
 )
 
+// Need to add support for snappy compression here!
+
 // Conn represents a memcached protocol connection.
 type Conn struct {
 	stream io.ReadWriter

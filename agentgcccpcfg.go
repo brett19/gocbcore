@@ -5,6 +5,9 @@ import (
 	"time"
 )
 
+// Move to its own component, possibly merged with the CCCP looper,
+// since both of them implement nearly the identical logic.
+
 func (agent *Agent) gcccpLooper() {
 	tickTime := agent.confCccpPollPeriod
 	maxWaitTime := agent.confCccpMaxWait

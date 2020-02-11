@@ -7,6 +7,11 @@ import (
 	"strings"
 )
 
+// This handling probably should be broken down into individual pieces
+// which are dispensed by the configmanager in those pieces.  Such that
+// components which don't care about a bucket selected can still access
+// the config the same way as if there WAS a bucket selecteD?
+
 // RestPool represents a single pool returned from the pools REST API.
 type cfgRestPool struct {
 	Name         string `json:"name"`

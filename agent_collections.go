@@ -8,6 +8,9 @@ import (
 	"sync"
 )
 
+// The collection manager should be refactored such that the logic is more
+// follow-able (not a word), and so that it is an independant component
+
 const (
 	unknownCid = uint32(0xFFFFFFFF)
 	pendingCid = uint32(0xFFFFFFFE)

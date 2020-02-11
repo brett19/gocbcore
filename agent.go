@@ -427,6 +427,30 @@ func (agent *Agent) connectWithBucket(memdAddrs, httpAddrs []string, authMechani
 			srvDeadlineTm = deadline
 		}
 
+		/*
+			clientProvider := SomeClientProvider{}
+			client := clientProvider.GetClient(someHow)
+
+			// ... connect and shit
+
+			muxer := NewMuxer(clientProvider, configManager)
+			muxer.AddClient(client)
+		*/
+
+		/* OPTION 1:
+		muxer := NewMuxer(clientProvider, configManager)
+		router := NewRouter(configManager)
+		*/
+
+		/* OPTION 2:  ------ THIS ONE WAS SELECTED!
+		muxer := NewMuxer(clientProvider)
+
+		configManager.Watch(func (newConfig *routeConfig) {
+			muxer.UpdateServer(newConfig.Server)
+			router.SetKetamaMap(newConfig.KetamaMap)
+		})
+		*/
+
 		logDebugf("Trying to connect %p/%s", agent, thisHostPort)
 		client, err := agent.dialMemdClient(thisHostPort, srvDeadlineTm)
 		if err != nil {
@@ -519,6 +543,8 @@ func (agent *Agent) connectWithBucket(memdAddrs, httpAddrs []string, authMechani
 			revID: -1,
 		})
 
+		// This should actually put it into a routing map, that is then 'taken over' during the
+		// next configuration update?
 		agent.cacheClientNoLock(client)
 
 		if routeCfg.vbMap != nil {
@@ -801,6 +827,9 @@ func (agent *Agent) updateConfig(cfg cfgObj) {
 	agent.updateClusterCapabilities(cfg)
 }
 
+// This can be refactored to actually place the cached client into a muxer directly
+// so that it is implicitly used, rather than going through the steps of detecting the
+// lack of a client, trying to slow-dial, detecting the cached client, and then using it.
 func (agent *Agent) getCachedClient(address string) *memdClient {
 	agent.cachedClientsLock.Lock()
 	cli, ok := agent.cachedClients[address]
@@ -1087,6 +1116,9 @@ func (agent *Agent) setBucket(bucket string) {
 	defer agent.bucketLock.Unlock()
 	agent.bucketName = bucket
 }
+
+// Select Bucket should probably be moved to its own file.  This file could probably
+// also contain the bootstrapping code?
 
 // SelectBucket performs a select bucket operation against the cluster.
 func (agent *Agent) SelectBucket(bucketName string, deadline time.Time) error {

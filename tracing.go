@@ -8,6 +8,16 @@ import (
 	"time"
 )
 
+// Tracing should be implemented as a sort of middleware.  Events should be sent when
+// a request is about to be sent, and when the response is initial received, so that we
+// can tag the IO portion?  Alternatively, tracing can be implemented generically
+// throughout the entire SDK, kinda like it is now, but without weird callbacky things
+// in some places, and actual integration in others.
+
+// A better solution would be that places like memdClient take a tracing handler
+// which it uses to alert the top-level system about the tracing events that are
+// occuring.  Essentially dependancy injeciton.
+
 // RequestTracer describes the tracing abstraction in the SDK.
 type RequestTracer interface {
 	StartSpan(operationName string, parentContext RequestSpanContext) RequestSpan

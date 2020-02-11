@@ -7,6 +7,9 @@ import (
 	"time"
 )
 
+// This should probably be part of the Agent directly, NOT a composited component,
+// this is because most of the data present here covers multiple components.
+
 // PingResult contains the results of a ping to a single server.
 type PingResult struct {
 	Endpoint string

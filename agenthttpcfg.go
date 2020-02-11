@@ -10,6 +10,8 @@ import (
 	"time"
 )
 
+// Move to its own component
+
 type configStreamBlock struct {
 	Bytes []byte
 }

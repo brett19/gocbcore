@@ -12,10 +12,15 @@ import (
 )
 
 // AgentConfig specifies the configuration options for creation of an Agent.
+// We should probably group pieces of this configuration together based on the
+// component that they are used for, such as in gocb.ConnectOptions
 type AgentConfig struct {
-	UserAgent   string
-	MemdAddrs   []string
-	HTTPAddrs   []string
+	UserAgent string
+
+	// Possibly drop HTTPaddrs, or replace with connection string
+	MemdAddrs []string
+	HTTPAddrs []string
+
 	UseTLS      bool
 	BucketName  string
 	NetworkType string
@@ -34,17 +39,22 @@ type AgentConfig struct {
 	CompressionMinSize  int
 	CompressionMinRatio float64
 
+	// These have bad names, probably should fix that
 	HTTPRedialPeriod time.Duration
 	HTTPRetryDelay   time.Duration
 	CccpMaxWait      time.Duration
 	CccpPollPeriod   time.Duration
 
+	// Conneciton timeouts don't exist in 3.0 SDKs anymore, this should be
+	// removed and the connection should retry indefinitely.
 	ConnectTimeout   time.Duration
 	KVConnectTimeout time.Duration
 
+	// This is actually specific to the router
 	KvPoolSize   int
 	MaxQueueSize int
 
+	// This is specific to HTTP services
 	HTTPMaxIdleConns          int
 	HTTPMaxIdleConnsPerHost   int
 	HTTPIdleConnectionTimeout time.Duration
@@ -53,18 +63,22 @@ type AgentConfig struct {
 	Tracer           RequestTracer
 	NoRootTraceSpans bool
 
+	// These are already grouped, go us.
 	DefaultRetryStrategy RetryStrategy
 	CircuitBreakerConfig CircuitBreakerConfig
 
+	// Group this stuff together
 	UseZombieLogger        bool
 	ZombieLoggerInterval   time.Duration
 	ZombieLoggerSampleSize int
 
+	// This is DCP specific
 	DcpAgentPriority DcpAgentPriority
 	UseDCPExpiry     bool
 	UseDCPStreamID   bool
 }
 
+// Redaction should probably be agent-specific or logger specific?
 func (config *AgentConfig) redacted() interface{} {
 	newConfig := AgentConfig{}
 	newConfig = *config
@@ -141,6 +155,7 @@ func (config *AgentConfig) FromConnStr(connStr string) error {
 	}
 
 	// Get bootstrap_on option to determine which, if any, of the bootstrap nodes should be cleared
+	// I don't think this is meant to exist?
 	switch val, _ := fetchOption("bootstrap_on"); val {
 	case "http":
 		memdHosts = nil

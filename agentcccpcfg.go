@@ -5,6 +5,61 @@ import (
 	"time"
 )
 
+/*
+type Muxer struct {
+}
+
+type ConfigManager struct {
+}
+
+type CccpConfigProvider struct {
+	*Muxer
+	*ConfigManager
+}
+
+func (p *CccpConfigProvider) start() {
+
+	//p.ConfigManager.UpdateConfig(&config)
+}
+
+// MemdMuxer handles the connection pooling management, as well as the routing
+// of requests to the appropriate server based on the key?
+type MemdMuxer struct {
+	*ConfigManager
+
+	poolSize uint
+}
+
+func (m *MemdMuxer) start() {
+	m.ConfigManager.Watch(func(newConfig *routeConfig) {
+		// Do some updates to our muxing?
+	})
+}
+
+func (m *MemdMuxer) send(serverIdx uint, pak *memd.Packet) error {
+
+}
+
+type MemdRouter struct {
+	*ConfigManager
+	*MemdMuxer
+}
+
+func (m *MemdRouter) start() {
+	m.ConfigManager.Watch(func(newConfig *routeConfig) {
+		// Do some updates to our muxing?
+	})
+}
+
+func (m *MemdRouter) route(pak *memd.Packet) error {
+	// ...
+	m.MemdMuxer.send(serverIdx, pak)
+}
+
+// This should be split out to its own component.  It should depend on some provider
+// of memcached
+*/
+
 func (agent *Agent) cccpLooper() {
 	tickTime := agent.confCccpPollPeriod
 	maxWaitTime := agent.confCccpMaxWait

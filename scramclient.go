@@ -27,6 +27,8 @@
 //
 // http://tools.ietf.org/html/rfc5802
 
+// This should probably be moved into a subpackage
+
 package gocbcore
 
 import (

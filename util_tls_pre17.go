@@ -6,6 +6,7 @@ import (
 	"crypto/tls"
 )
 
+// This is not used, we don't even support these go versions.  Waht the fuck?
 func cloneTLSConfig(c *tls.Config) *tls.Config {
 	if c == nil {
 		return nil

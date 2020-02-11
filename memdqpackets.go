@@ -42,6 +42,10 @@ type memdQRequest struct {
 	//  requirements.
 	dispatchTime time.Time
 
+	// We should probably try and come up with some way to handle the cancellation
+	// of operations and their removal from the queues in a way which does not require
+	// tracking of all the places that a request could be queued....
+
 	// This stores a pointer to the server that currently own
 	//   this request.  This allows us to remove it from that list
 	//   whenever the request is cancelled.

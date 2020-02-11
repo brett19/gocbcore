@@ -7,6 +7,10 @@ import (
 	"time"
 )
 
+// This should probably be refactored away.  We can probably implement this pieces by writing specialized
+// methods which take a client and do something in a blocking manner.  IE:
+// DoBlockingGetCCCP(client *SomeClient)
+
 type memdSenderClient interface {
 	SupportsFeature(HelloFeature) bool
 	Address() string

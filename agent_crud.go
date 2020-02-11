@@ -5,6 +5,10 @@ import (
 	"sync"
 )
 
+// These CRUD operations should be refactored to exist as a component
+// which is composited into the agent, such that DCP can be implemented
+// without KV (which is technically illegal anyways).
+
 // GetOptions encapsulates the parameters for a GetEx operation.
 type GetOptions struct {
 	Key            []byte
