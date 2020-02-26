@@ -479,7 +479,7 @@ func (agent *Agent) applyRoutingConfig(cfg *routeConfig) bool {
 	return true
 }
 
-func (agent *Agent) updateRoutingConfig(cfg cfgObj) bool {
+func (agent *Agent) updateRoutingConfig(cfg *cfgBucket) bool {
 	if cfg == nil {
 		// Use the existing config if none was passed.
 		oldRouting := agent.routingInfo.Get()

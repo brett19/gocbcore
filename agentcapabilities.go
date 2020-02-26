@@ -2,7 +2,7 @@ package gocbcore
 
 import "sync/atomic"
 
-func (agent *Agent) buildClusterCapabilities(cfg cfgObj) ClusterCapability {
+func (agent *Agent) buildClusterCapabilities(cfg *cfgBucket) ClusterCapability {
 	caps := cfg.ClusterCaps()
 	capsVer := cfg.ClusterCapsVer()
 	if capsVer == nil || len(capsVer) == 0 || caps == nil {
@@ -27,7 +27,7 @@ func (agent *Agent) buildClusterCapabilities(cfg cfgObj) ClusterCapability {
 	return agentCapabilities
 }
 
-func (agent *Agent) updateClusterCapabilities(cfg cfgObj) {
+func (agent *Agent) updateClusterCapabilities(cfg *cfgBucket) {
 	agentCapabilities := agent.buildClusterCapabilities(cfg)
 	if agentCapabilities == 0 {
 		return

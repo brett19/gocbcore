@@ -199,7 +199,7 @@ func (agent *Agent) httpLooper(firstCfgFn func(*cfgBucket, string, error) bool) 
 
 			logDebugf("Got Block: %v", string(configBlock.Bytes))
 
-			bkCfg, err := parseBktConfig(configBlock.Bytes, hostname)
+			bkCfg, err := parseConfig(configBlock.Bytes, hostname)
 			if err != nil {
 				logDebugf("Got error while parsing config: %v", err)
 

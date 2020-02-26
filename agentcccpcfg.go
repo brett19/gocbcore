@@ -13,9 +13,13 @@ func (agent *Agent) cccpLooper() {
 	logDebugf("CCCP Looper starting.")
 
 	nodeIdx := -1
+
+Looper:
 	for {
 		// Wait for either the agent to be shut down, or our tick time to expire
 		select {
+		case <-agent.cccpLooperStopSig:
+			break Looper
 		case pause := <-agent.cccpLooperPauseSig:
 			paused = pause
 		case <-time.After(tickTime):
@@ -65,7 +69,7 @@ func (agent *Agent) cccpLooper() {
 				continue
 			}
 
-			bk, err := parseBktConfig(cccpBytes, hostName)
+			bk, err := parseConfig(cccpBytes, hostName)
 			if err != nil {
 				logDebugf("CCCPPOLL: Failed to parse CCCP config. %v", err)
 				continue

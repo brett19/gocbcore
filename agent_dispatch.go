@@ -74,7 +74,7 @@ func (agent *Agent) handleNotMyVbucket(resp *memdQResponse, req *memdQRequest) b
 		logErrorf("NMV response source address was invalid, skipping config update")
 	} else {
 		// Try to parse the value as a bucket configuration
-		bk, err := parseBktConfig(resp.Value, sourceHost)
+		bk, err := parseConfig(resp.Value, sourceHost)
 		if err == nil {
 			agent.updateConfig(bk)
 		}

@@ -30,6 +30,6 @@ func (config *routeConfig) IsValid() bool {
 	}
 }
 
-func buildRouteConfig(config cfgObj, useSsl bool, networkType string, firstConnect bool) *routeConfig {
+func buildRouteConfig(config *cfgBucket, useSsl bool, networkType string, firstConnect bool) *routeConfig {
 	return config.BuildRouteConfig(useSsl, networkType, firstConnect)
 }

@@ -43,11 +43,10 @@ type Agent struct {
 	tlsConfig      *tls.Config
 	initFn         memdInitFunc
 
-	closeNotify        chan struct{}
-	cccpLooperDoneSig  chan struct{}
-	httpLooperDoneSig  chan struct{}
-	gcccpLooperDoneSig chan struct{}
-	gcccpLooperStopSig chan struct{}
+	closeNotify       chan struct{}
+	cccpLooperDoneSig chan struct{}
+	cccpLooperStopSig chan struct{}
+	httpLooperDoneSig chan struct{}
 
 	// Used exclusively for testing to overcome GOCBC-780. It allows a test to pause the cccp looper preventing
 	// unwanted requests from being sent to the mock once it has been setup for error map testing.
@@ -475,7 +474,7 @@ func (agent *Agent) connectWithBucket(memdAddrs, httpAddrs []string, deadline ti
 			continue
 		}
 
-		bk, err := parseBktConfig(cfgBytes, hostName)
+		bk, err := parseConfig(cfgBytes, hostName)
 		if err != nil {
 			logDebugf("Failed to parse cluster configuration %p/%s. %v", agent, thisHostPort, err)
 			agent.disconnectClient(client)
@@ -597,7 +596,7 @@ func (agent *Agent) connectG3CP(memdAddrs, httpAddrs []string, deadline time.Tim
 			continue
 		}
 
-		cfg, err := parseClusterConfig(cfgBytes, hostName)
+		cfg, err := parseConfig(cfgBytes, hostName)
 		if err != nil {
 			logDebugf("Failed to parse cluster configuration %p/%s. %v", agent, thisHostPort, err)
 			agent.cacheClientNoLock(client)
@@ -646,9 +645,9 @@ func (agent *Agent) connectG3CP(memdAddrs, httpAddrs []string, deadline time.Tim
 
 	agent.applyRoutingConfig(routeCfg)
 
-	agent.gcccpLooperDoneSig = make(chan struct{})
-	agent.gcccpLooperStopSig = make(chan struct{})
-	go agent.gcccpLooper()
+	agent.cccpLooperDoneSig = make(chan struct{})
+	agent.cccpLooperStopSig = make(chan struct{})
+	go agent.cccpLooper()
 
 	return nil
 
@@ -739,7 +738,7 @@ func (agent *Agent) tryStartHTTPLooper(httpAddrs []string) error {
 	return nil
 }
 
-func (agent *Agent) buildFirstRouteConfig(config cfgObj, srcServer string) *routeConfig {
+func (agent *Agent) buildFirstRouteConfig(config *cfgBucket, srcServer string) *routeConfig {
 	if agent.networkType != "" && agent.networkType != "auto" {
 		return buildRouteConfig(config, agent.IsSecure(), agent.networkType, true)
 	}
@@ -775,7 +774,7 @@ func (agent *Agent) buildFirstRouteConfig(config cfgObj, srcServer string) *rout
 	return defaultRouteConfig
 }
 
-func (agent *Agent) updateConfig(cfg cfgObj) {
+func (agent *Agent) updateConfig(cfg *cfgBucket) {
 	updated := agent.updateRoutingConfig(cfg)
 	if !updated {
 		return
@@ -841,8 +840,8 @@ func (agent *Agent) Close() error {
 	if agent.cccpLooperDoneSig != nil {
 		<-agent.cccpLooperDoneSig
 	}
-	if agent.gcccpLooperDoneSig != nil {
-		<-agent.gcccpLooperDoneSig
+	if agent.cccpLooperDoneSig != nil {
+		<-agent.cccpLooperDoneSig
 	}
 	if agent.httpLooperDoneSig != nil {
 		<-agent.httpLooperDoneSig
@@ -1079,11 +1078,11 @@ func (agent *Agent) SelectBucket(bucketName string, deadline time.Time) error {
 
 	logDebugf("Selecting on %p", agent)
 
-	// Stop the gcccp looper if it's running, if we connected to a node but gcccp wasn't supported then the looper
+	// Stop the cccp looper if it's running, if we connected to a node but gcccp wasn't supported then the looper
 	// won't be running.
-	if agent.gcccpLooperStopSig != nil {
-		agent.gcccpLooperStopSig <- struct{}{}
-		<-agent.gcccpLooperDoneSig
+	if agent.cccpLooperStopSig != nil {
+		agent.cccpLooperStopSig <- struct{}{}
+		<-agent.cccpLooperDoneSig
 		logDebugf("GCCCP poller halted for %p", agent)
 	}
 
@@ -1136,7 +1135,7 @@ func (agent *Agent) SelectBucket(bucketName string, deadline time.Time) error {
 					continue
 				}
 
-				bk, err := parseBktConfig(cccpBytes, hostName)
+				bk, err := parseConfig(cccpBytes, hostName)
 				if err != nil {
 					logDebugf("CCCPPOLL: Failed to parse CCCP config. %v", err)
 					continue
@@ -1192,7 +1191,7 @@ func (agent *Agent) SelectBucket(bucketName string, deadline time.Time) error {
 				continue
 			}
 
-			bk, err := parseBktConfig(cccpBytes, hostName)
+			bk, err := parseConfig(cccpBytes, hostName)
 			if err != nil {
 				logDebugf("CCCPPOLL: Failed to parse CCCP config. %v", err)
 				continue

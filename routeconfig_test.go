@@ -11,7 +11,7 @@ func loadConfigFromFile(t *testing.T, filename string) (cfg *cfgBucket) {
 	if err != nil {
 		t.Fatal(err.Error())
 	}
-	rawCfg, err := parseBktConfig(s, "localhost")
+	rawCfg, err := parseConfig(s, "localhost")
 	if err != nil {
 		t.Fatal(err.Error())
 	}
