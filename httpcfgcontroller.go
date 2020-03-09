@@ -34,9 +34,54 @@ func hostnameFromURI(uri string) string {
 	return hostname
 }
 
-func (agent *Agent) httpLooper(firstCfgFn func(*cfgBucket, string, error) bool) {
-	waitPeriod := agent.confHTTPRetryDelay
-	maxConnPeriod := agent.confHTTPRedialPeriod
+type httpConfigController struct {
+	routingInfo          func() (*routeConfig, *memdClientMux)
+	watcher              func(config *cfgBucket)
+	confHTTPRetryDelay   time.Duration
+	confHTTPRedialPeriod time.Duration
+	auth                 AuthProvider
+	httpCli              *http.Client
+
+	closeNotify   chan struct{}
+	looperDoneSig chan struct{}
+}
+
+type httpPollerProperties struct {
+	confHTTPRetryDelay   time.Duration
+	confHTTPRedialPeriod time.Duration
+	closeNotify          chan struct{}
+	auth                 AuthProvider
+	httpCli              *http.Client
+}
+
+func newHTTPConfigController(props httpPollerProperties, watcher func(config *cfgBucket), routingInfo func() (*routeConfig, *memdClientMux)) *httpConfigController {
+	return &httpConfigController{
+		routingInfo:          routingInfo,
+		watcher:              watcher,
+		confHTTPRedialPeriod: props.confHTTPRedialPeriod,
+		confHTTPRetryDelay:   props.confHTTPRetryDelay,
+		closeNotify:          props.closeNotify,
+		auth:                 props.auth,
+		httpCli:              props.httpCli,
+		looperDoneSig:        make(chan struct{}),
+	}
+}
+
+func (hcc *httpConfigController) Pause(paused bool) {
+
+}
+
+func (hcc *httpConfigController) Done() chan struct{} {
+	return hcc.looperDoneSig
+}
+
+func (hcc *httpConfigController) Stop() {
+
+}
+
+func (hcc *httpConfigController) DoLoop(firstCfgFn func(*cfgBucket, string, error) bool) {
+	waitPeriod := hcc.confHTTPRetryDelay
+	maxConnPeriod := hcc.confHTTPRedialPeriod
 
 	var iterNum uint64 = 1
 	iterSawConfig := false
@@ -45,7 +90,7 @@ func (agent *Agent) httpLooper(firstCfgFn func(*cfgBucket, string, error) bool) 
 
 	logDebugf("HTTP Looper starting.")
 	for {
-		routingInfo := agent.routingInfo.Get()
+		routingInfo, _ := hcc.routingInfo()
 		if routingInfo == nil {
 			// Shutdown the looper if the agent is shutdown
 			break
@@ -75,7 +120,7 @@ func (agent *Agent) httpLooper(firstCfgFn func(*cfgBucket, string, error) bool) 
 				// We also watch for the client being shut down.
 				select {
 				case <-time.After(waitPeriod):
-				case <-agent.closeNotify:
+				case <-hcc.closeNotify:
 				}
 			}
 			logDebugf("Looping again.")
@@ -102,7 +147,7 @@ func (agent *Agent) httpLooper(firstCfgFn func(*cfgBucket, string, error) bool) 
 				streamPath = "bucketsStreaming"
 			}
 			// HTTP request time!
-			uri := fmt.Sprintf("%s/pools/default/%s/%s", pickedSrv, streamPath, agent.bucket())
+			uri := fmt.Sprintf("%s/pools/default/%s/%s", pickedSrv, streamPath, routingInfo.name)
 			logDebugf("Requesting config from: %s.", uri)
 
 			req, err := http.NewRequest("GET", uri, nil)
@@ -111,15 +156,15 @@ func (agent *Agent) httpLooper(firstCfgFn func(*cfgBucket, string, error) bool) 
 				return 0
 			}
 
-			creds, err := getMgmtAuthCreds(agent.auth, pickedSrv)
+			creds, err := getMgmtAuthCreds(hcc.auth, pickedSrv)
 			if err != nil {
-				logDebugf("Failed to build get config credentials. %v", err)
+				logDebugf("Failed to build Get config credentials. %v", err)
 				return 0
 			}
 
 			req.SetBasicAuth(creds.Username, creds.Password)
 
-			resp, err = agent.httpCli.Do(req)
+			resp, err = hcc.httpCli.Do(req)
 			if err != nil {
 				logDebugf("Failed to connect to host. %v", err)
 				return 0
@@ -160,7 +205,7 @@ func (agent *Agent) httpLooper(firstCfgFn func(*cfgBucket, string, error) bool) 
 		go func() {
 			select {
 			case <-time.After(maxConnPeriod):
-			case <-agent.closeNotify:
+			case <-hcc.closeNotify:
 			}
 
 			logDebugf("Automatically resetting our HTTP connection")
@@ -229,12 +274,12 @@ func (agent *Agent) httpLooper(firstCfgFn func(*cfgBucket, string, error) bool) 
 				isFirstTry = false
 			} else {
 				logDebugf("HTTP Config Update")
-				agent.updateConfig(bkCfg)
+				hcc.watcher(bkCfg)
 			}
 		}
 
 		logDebugf("HTTP, Setting %s to iter %d", pickedSrv, iterNum)
 	}
 
-	close(agent.httpLooperDoneSig)
+	close(hcc.looperDoneSig)
 }

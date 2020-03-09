@@ -211,6 +211,7 @@ func (cfg *cfgBucket) BuildRouteConfig(useSsl bool, networkType string, firstCon
 	rc := &routeConfig{
 		revID:        cfg.Rev,
 		uuid:         cfg.UUID,
+		name:         cfg.Name,
 		kvServerList: kvServerList,
 		capiEpList:   capiEpList,
 		mgmtEpList:   mgmtEpList,

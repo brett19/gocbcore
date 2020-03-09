@@ -200,7 +200,7 @@ func (agent *Agent) zombieLogger(interval time.Duration, sampleSize int) {
 		// are cleaned up promptly after agent shutdown.
 		<-time.After(1 * time.Second)
 
-		routingInfo := agent.routingInfo.Get()
+		routingInfo, _ := agent.routeCfgMgr.Get()
 		if routingInfo == nil {
 			// If the routing info is gone, the agent shut down and we should close
 			return

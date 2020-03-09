@@ -28,7 +28,7 @@ type MutationToken struct {
 
 // PendingOp represents an outstanding operation within the client.
 // This can be used to cancel an operation before it completes.
-// This can also be used to get information about the operation once
+// This can also be used to Get information about the operation once
 // it has completed (cancelled or successful).
 type PendingOp interface {
 	Cancel(err error)
@@ -59,7 +59,7 @@ func (agent *Agent) waitAndRetryOperation(req *memdQRequest, reason RetryReason)
 	if shouldRetry {
 		go func() {
 			time.Sleep(retryTime.Sub(time.Now()))
-			agent.requeueDirect(req, true)
+			agent.routeCfgMgr.RequeueDirect(req, true)
 		}()
 		return true
 	}
@@ -76,7 +76,7 @@ func (agent *Agent) handleNotMyVbucket(resp *memdQResponse, req *memdQRequest) b
 		// Try to parse the value as a bucket configuration
 		bk, err := parseConfig(resp.Value, sourceHost)
 		if err == nil {
-			agent.updateConfig(bk)
+			agent.cfgManager.OnNewConfig(bk)
 		}
 	}
 
@@ -345,7 +345,7 @@ func (agent *Agent) dispatchOpToAddress(req *memdQRequest, address string) (Pend
 	req.owner = agent
 	req.dispatchTime = time.Now()
 
-	err := agent.dispatchDirectToAddress(req, address)
+	err := agent.routeCfgMgr.DispatchDirectToAddress(req, address)
 	if err != nil {
 		shortCircuit, routeErr := agent.handleOpRoutingResp(nil, req, err)
 		if shortCircuit {

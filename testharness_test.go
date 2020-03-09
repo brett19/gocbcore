@@ -132,6 +132,7 @@ func (h *TestHarness) initDefaultAgent() error {
 
 	config.UseMutationTokens = true
 	config.UseCollections = true
+	config.BucketName = h.BucketName
 
 	config.Auth = &PasswordAuthProvider{
 		Username: h.Username,
@@ -143,10 +144,11 @@ func (h *TestHarness) initDefaultAgent() error {
 		return err
 	}
 
-	err = agent.SelectBucket(h.BucketName, time.Now().Add(2*time.Second))
-	if err != nil {
-		return err
-	}
+	// TODO: Reenable this
+	// err = agent.SelectBucket(h.BucketName, time.Now().Add(2*time.Second))
+	// if err != nil {
+	// 	return err
+	// }
 
 	h.defaultAgent = agent
 
@@ -162,15 +164,17 @@ func (h *TestHarness) initMemdAgent() error {
 		Password: h.Password,
 	}
 
+	config.BucketName = h.BucketName
+
 	agent, err := CreateAgent(&config)
 	if err != nil {
 		return err
 	}
 
-	err = agent.SelectBucket(h.MemdBucketName, time.Now().Add(2*time.Second))
-	if err != nil {
-		return err
-	}
+	// err = agent.SelectBucket(h.MemdBucketName, time.Now().Add(2*time.Second))
+	// if err != nil {
+	// 	return err
+	// }
 
 	h.memdAgent = agent
 
@@ -260,8 +264,8 @@ func (h *TestHarness) TimeTravel(waitDura time.Duration) {
 // of a server
 func (h *TestHarness) MakeDistKeys(agent *Agent) (keys []string) {
 	// Get the routing information
-	cfg := agent.routingInfo.Get()
-	keys = make([]string, cfg.clientMux.NumPipelines())
+	cfg, clientMux := agent.routeCfgMgr.Get()
+	keys = make([]string, clientMux.NumPipelines())
 	remaining := len(keys)
 
 	for i := 0; remaining > 0; i++ {

@@ -94,9 +94,9 @@ func testKvErrorMapGeneric(t *testing.T, errCode uint16) {
 
 	testKey := "hello"
 
-	agent.cccpLooperPauseSig <- true
+	agent.pollerController.PauseLooper(true)
 	defer func() {
-		agent.cccpLooperPauseSig <- false
+		agent.pollerController.PauseLooper(false)
 	}()
 
 	h.mockInst.Control(gojcbmock.NewCommand(gojcbmock.COpFail, map[string]interface{}{

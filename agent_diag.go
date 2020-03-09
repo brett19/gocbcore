@@ -64,7 +64,7 @@ type PingKvExCallback func(*PingKvResult, error)
 // PingKvEx pings all of the servers we are connected to and returns
 // a report regarding the pings that were performed.
 func (agent *Agent) PingKvEx(opts PingKvOptions, cb PingKvExCallback) (PendingOp, error) {
-	config := agent.routingInfo.Get()
+	config, clientMux := agent.routeCfgMgr.Get()
 	if config == nil {
 		return nil, errShutdown
 	}
@@ -104,8 +104,8 @@ func (agent *Agent) PingKvEx(opts PingKvOptions, cb PingKvExCallback) (PendingOp
 
 	retryStrat := newFailFastRetryStrategy()
 
-	for serverIdx := 0; serverIdx < config.clientMux.NumPipelines(); serverIdx++ {
-		pipeline := config.clientMux.GetPipeline(serverIdx)
+	for serverIdx := 0; serverIdx < clientMux.NumPipelines(); serverIdx++ {
+		pipeline := clientMux.GetPipeline(serverIdx)
 		serverAddress := pipeline.Address()
 
 		req := &memdQRequest{
@@ -176,14 +176,14 @@ type DiagnosticInfo struct {
 // states.
 func (agent *Agent) Diagnostics() (*DiagnosticInfo, error) {
 	for {
-		config := agent.routingInfo.Get()
+		config, clientMux := agent.routeCfgMgr.Get()
 		if config == nil {
 			return nil, errShutdown
 		}
 
 		var conns []MemdConnInfo
 
-		for _, pipeline := range config.clientMux.pipelines {
+		for _, pipeline := range clientMux.pipelines {
 			pipeline.clientsLock.Lock()
 			for _, pipecli := range pipeline.clients {
 				localAddr := ""
@@ -215,7 +215,7 @@ func (agent *Agent) Diagnostics() (*DiagnosticInfo, error) {
 			pipeline.clientsLock.Unlock()
 		}
 
-		endConfig := agent.routingInfo.Get()
+		endConfig, _ := agent.routeCfgMgr.Get()
 		if endConfig == config {
 			return &DiagnosticInfo{
 				ConfigRev: config.revID,
