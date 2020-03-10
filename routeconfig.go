@@ -15,6 +15,9 @@ type routeConfig struct {
 	cbasEpList   []string
 	vbMap        *vbucketMap
 	ketamaMap    *ketamaContinuum
+
+	clusterCapabilitiesVer []int
+	clusterCapabilities    map[string][]string
 }
 
 func (config *routeConfig) DebugString() string {

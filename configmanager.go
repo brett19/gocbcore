@@ -1,17 +1,13 @@
 package gocbcore
 
-import "sync/atomic"
-
 type configManager struct {
 	useSSL      bool
 	networkType string
 
-	firstConfig bool
+	currentConfig *routeConfig
 
-	cfgChangeWatcher routeConfigWatch
-	invalidWatcher   func()
-
-	clusterCapabilities uint32
+	cfgChangeWatchers []routeConfigWatch
+	invalidWatcher    func()
 }
 
 type configManagerProperties struct {
@@ -19,15 +15,17 @@ type configManagerProperties struct {
 	NetworkType string
 }
 
-// routeConfigWatch will receive a route config and then reply whether or not that route config was used.
-type routeConfigWatch func(config *routeConfig) bool
+type routeConfigWatch func(config *routeConfig)
 
-func newConfigManager(props configManagerProperties, cfgChangeWatcher routeConfigWatch, invalidCfgWatcher func()) *configManager {
+func newConfigManager(props configManagerProperties, cfgChangeWatchers []routeConfigWatch, invalidCfgWatcher func()) *configManager {
 	return &configManager{
-		useSSL:           props.UseSSL,
-		networkType:      props.NetworkType,
-		cfgChangeWatcher: cfgChangeWatcher,
-		invalidWatcher:   invalidCfgWatcher,
+		useSSL:            props.UseSSL,
+		networkType:       props.NetworkType,
+		cfgChangeWatchers: cfgChangeWatchers,
+		invalidWatcher:    invalidCfgWatcher,
+		currentConfig: &routeConfig{
+			revID: -1,
+		},
 	}
 }
 
@@ -38,9 +36,14 @@ func (cm *configManager) OnNewConfig(cfg *cfgBucket) {
 		cm.invalidWatcher()
 		return
 	}
-	used := cm.cfgChangeWatcher(routeCfg)
-	if used {
-		cm.updateClusterCapabilities(cfg)
+
+	// There's something wrong with this route config so don't send it to the watchers.
+	if !cm.updateRouteConfig(routeCfg) {
+		return
+	}
+
+	for _, watcher := range cm.cfgChangeWatchers {
+		watcher(routeCfg)
 	}
 }
 
@@ -52,8 +55,55 @@ func (cm *configManager) OnFirstRouteConfig(config *cfgBucket, srcServer string)
 		return false
 	}
 
-	cm.updateClusterCapabilities(config)
-	return cm.cfgChangeWatcher(routeCfg)
+	// There's something wrong with this route config so don't send it to the watchers
+	// and inform the caller that it was bad.
+	if !cm.updateRouteConfig(routeCfg) {
+		return false
+	}
+
+	for _, watcher := range cm.cfgChangeWatchers {
+		watcher(routeCfg)
+	}
+
+	return true
+}
+
+// We should never be receiving concurrent updates and nothing should be accessing
+// our internal route config so we shouldn't need to lock here.
+func (cm *configManager) updateRouteConfig(cfg *routeConfig) bool {
+	oldCfg := cm.currentConfig
+
+	// Check some basic things to ensure consistency!
+	if oldCfg.revID > -1 {
+		if (cfg.vbMap == nil) != (oldCfg.vbMap == nil) {
+			logErrorf("Received a configuration with a different number of vbuckets.  Ignoring.")
+			return false
+		}
+
+		if cfg.vbMap != nil && cfg.vbMap.NumVbuckets() != oldCfg.vbMap.NumVbuckets() {
+			logErrorf("Received a configuration with a different number of vbuckets.  Ignoring.")
+			return false
+		}
+	}
+
+	// Check that the new config data is newer than the current one, in the case where we've done a select bucket
+	// against an existing connection then the revisions could be the same. In that case the configuration still
+	// needs to be applied.
+	if cfg.revID == 0 {
+		logDebugf("Unversioned configuration data, switching.")
+	} else if cfg.bktType != oldCfg.bktType {
+		logDebugf("Configuration data changed bucket type, switching.")
+	} else if cfg.revID == oldCfg.revID {
+		logDebugf("Ignoring configuration with identical revision number")
+		return false
+	} else if cfg.revID < oldCfg.revID {
+		logDebugf("Ignoring new configuration as it has an older revision id")
+		return false
+	}
+
+	cm.currentConfig = cfg
+
+	return true
 }
 
 func (cm *configManager) buildFirstRouteConfig(config *cfgBucket, srcServer string) *routeConfig {
@@ -90,48 +140,6 @@ func (cm *configManager) buildFirstRouteConfig(config *cfgBucket, srcServer stri
 	// If all else fails, default to the implicit default config
 	cm.networkType = "default"
 	return defaultRouteConfig
-}
-
-// SupportsClusterCapability returns whether or not the cluster supports a given capability.
-func (cm *configManager) SupportsClusterCapability(capability ClusterCapability) bool {
-	capabilities := ClusterCapability(atomic.LoadUint32(&cm.clusterCapabilities))
-
-	return capabilities&capability != 0
-}
-
-// TODO: this should likely be its own manager
-func (cm *configManager) updateClusterCapabilities(cfg *cfgBucket) {
-	capabilities := cm.buildClusterCapabilities(cfg)
-	if capabilities == 0 {
-		return
-	}
-
-	atomic.StoreUint32(&cm.clusterCapabilities, uint32(capabilities))
-}
-
-func (cm *configManager) buildClusterCapabilities(cfg *cfgBucket) ClusterCapability {
-	caps := cfg.ClusterCaps()
-	capsVer := cfg.ClusterCapsVer()
-	if capsVer == nil || len(capsVer) == 0 || caps == nil {
-		return 0
-	}
-
-	var agentCapabilities ClusterCapability
-	if capsVer[0] == 1 {
-		for category, catCapabilities := range caps {
-			switch category {
-			case "n1ql":
-				for _, capability := range catCapabilities {
-					switch capability {
-					case "enhancedPreparedStatements":
-						agentCapabilities |= ClusterCapabilityEnhancedPreparedStatements
-					}
-				}
-			}
-		}
-	}
-
-	return agentCapabilities
 }
 
 func (cm *configManager) NetworkType() string {

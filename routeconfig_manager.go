@@ -43,10 +43,6 @@ func newRouteConfigManager(qSize, poolSize int, getClientFn memdGetClientFunc, b
 	}
 }
 
-func (rcm *routeConfigManager) OnRouteCfgChange(routeCfg *routeConfig) bool {
-	return rcm.applyRoutingConfig(routeCfg)
-}
-
 // The route config and muxer are a pair and must always be used as a unit.
 func (rcm *routeConfigManager) Get() (*routeConfig, *memdClientMux) {
 	rcm.configLock.Lock()
@@ -57,43 +53,11 @@ func (rcm *routeConfigManager) Get() (*routeConfig, *memdClientMux) {
 	return cfg, mux
 }
 
-// Accepts a cfgBucket object representing a cluster configuration and rebuilds the server list
-//  along with any routing information for the Client.  Passing no config will refresh the existing one.
 //  This method MUST NEVER BLOCK due to its use from various contention points.
-func (rcm *routeConfigManager) applyRoutingConfig(cfg *routeConfig) bool {
+func (rcm *routeConfigManager) ApplyRoutingConfig(cfg *routeConfig) {
 	// Only a single thing can modify the config at any time
 	rcm.configLock.Lock()
 	defer rcm.configLock.Unlock()
-
-	oldCfg := rcm.routingConfig
-
-	// Check some basic things to ensure consistency!
-	if oldCfg.revID > -1 {
-		if (cfg.vbMap == nil) != (oldCfg.vbMap == nil) {
-			logErrorf("Received a configuration with a different number of vbuckets.  Ignoring.")
-			return false
-		}
-
-		if cfg.vbMap != nil && cfg.vbMap.NumVbuckets() != oldCfg.vbMap.NumVbuckets() {
-			logErrorf("Received a configuration with a different number of vbuckets.  Ignoring.")
-			return false
-		}
-	}
-
-	// Check that the new config data is newer than the current one, in the case where we've done a select bucket
-	// against an existing connection then the revisions could be the same. In that case the configuration still
-	// needs to be applied.
-	if cfg.revID == 0 {
-		logDebugf("Unversioned configuration data, switching.")
-	} else if cfg.bktType != oldCfg.bktType {
-		logDebugf("Configuration data changed bucket type, switching.")
-	} else if cfg.revID == oldCfg.revID {
-		logDebugf("Ignoring configuration with identical revision number")
-		return false
-	} else if cfg.revID < oldCfg.revID {
-		logDebugf("Ignoring new configuration as it has an older revision id")
-		return false
-	}
 
 	oldClientMux := rcm.clientMux
 	var newClientMux *memdClientMux
@@ -120,20 +84,18 @@ func (rcm *routeConfigManager) applyRoutingConfig(cfg *routeConfig) bool {
 		// Gather all the requests from all the old pipelines and then
 		//  sort and redispatch them (which will use the new pipelines)
 		var requestList []*memdQRequest
-		newClientMux.Drain(func(req *memdQRequest) {
+		oldClientMux.Drain(func(req *memdQRequest) {
 			requestList = append(requestList, req)
 		})
 
 		sort.Sort(memdQRequestSorter(requestList))
 
 		// TODO: don't forget these
-		// for _, req := range requestList {
-		// 	agent.stopCmdTrace(req)
-		// 	agent.requeueDirect(req, false)
-		// }
+		for _, req := range requestList {
+			// 	agent.stopCmdTrace(req)
+			rcm.RequeueDirect(req, false)
+		}
 	}
-
-	return true
 }
 
 func (rcm *routeConfigManager) ConfigUUID() string {

@@ -74,7 +74,6 @@ type Agent struct {
 	cidMgr *collectionIDManager
 
 	durabilityLevelStatus durabilityLevelStatus
-	clusterCapabilities   uint32
 	supportsCollections   bool
 
 	cachedClients       map[string]*memdClient
@@ -88,6 +87,7 @@ type Agent struct {
 	cfgManager       *configManager
 	pollerController *pollerController
 	routeCfgMgr      *routeConfigManager
+	clusterCapsMgr   *clusterCapabilitiesManager
 
 	agentConfig
 }
@@ -278,10 +278,15 @@ func createAgent(config *AgentConfig, initFn memdInitFunc) (*Agent, error) {
 	}
 	c.cidMgr = newCollectionIDManager(c, maxQueueSize)
 	c.routeCfgMgr = newRouteConfigManager(c.maxQueueSize, c.kvPoolSize, c.slowDialMemdClient, c.circuitBreakerConfig)
-	c.cfgManager = newConfigManager(configManagerProperties{
-		NetworkType: config.NetworkType,
-		UseSSL:      config.UseTLS,
-	}, c.routeCfgMgr.OnRouteCfgChange, c.onInvalidConfig)
+	c.clusterCapsMgr = newClusterCapabilitiesManager()
+	c.cfgManager = newConfigManager(
+		configManagerProperties{
+			NetworkType: config.NetworkType,
+			UseSSL:      config.UseTLS,
+		},
+		[]routeConfigWatch{c.routeCfgMgr.ApplyRoutingConfig, c.clusterCapsMgr.UpdateClusterCapabilities},
+		c.onInvalidConfig,
+	)
 
 	connectTimeout := 60000 * time.Millisecond
 	if config.ConnectTimeout > 0 {

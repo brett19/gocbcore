@@ -1276,10 +1276,9 @@ func TestAlternateAddressesEmptyStringConfig(t *testing.T) {
 
 	agent := Agent{}
 	var cfg *routeConfig
-	agent.cfgManager = newConfigManager(configManagerProperties{}, func(config *routeConfig) bool {
+	agent.cfgManager = newConfigManager(configManagerProperties{}, []routeConfigWatch{func(config *routeConfig) {
 		cfg = config
-		return true
-	}, func() {
+	}}, func() {
 
 	})
 	agent.cfgManager.OnFirstRouteConfig(cfgBk, "192.168.132.234:32799")
@@ -1306,10 +1305,9 @@ func TestAlternateAddressesAutoConfig(t *testing.T) {
 	var cfg *routeConfig
 	agent.cfgManager = newConfigManager(configManagerProperties{
 		NetworkType: "auto",
-	}, func(config *routeConfig) bool {
+	}, []routeConfigWatch{func(config *routeConfig) {
 		cfg = config
-		return true
-	}, func() {
+	}}, func() {
 
 	})
 	agent.cfgManager.OnFirstRouteConfig(cfgBk, "192.168.132.234:32799")
@@ -1336,10 +1334,9 @@ func TestAlternateAddressesAutoInternalConfig(t *testing.T) {
 	var cfg *routeConfig
 	agent.cfgManager = newConfigManager(configManagerProperties{
 		NetworkType: "auto",
-	}, func(config *routeConfig) bool {
+	}, []routeConfigWatch{func(config *routeConfig) {
 		cfg = config
-		return true
-	}, func() {
+	}}, func() {
 
 	})
 	agent.cfgManager.OnFirstRouteConfig(cfgBk, "172.17.0.4:11210")
@@ -1366,10 +1363,9 @@ func TestAlternateAddressesDefaultConfig(t *testing.T) {
 	var cfg *routeConfig
 	agent.cfgManager = newConfigManager(configManagerProperties{
 		NetworkType: "default",
-	}, func(config *routeConfig) bool {
+	}, []routeConfigWatch{func(config *routeConfig) {
 		cfg = config
-		return true
-	}, func() {
+	}}, func() {
 
 	})
 	agent.cfgManager.OnFirstRouteConfig(cfgBk, "192.168.132.234:32799")
@@ -1396,10 +1392,9 @@ func TestAlternateAddressesExternalConfig(t *testing.T) {
 	var cfg *routeConfig
 	agent.cfgManager = newConfigManager(configManagerProperties{
 		NetworkType: "external",
-	}, func(config *routeConfig) bool {
+	}, []routeConfigWatch{func(config *routeConfig) {
 		cfg = config
-		return true
-	}, func() {
+	}}, func() {
 
 	})
 	agent.cfgManager.OnFirstRouteConfig(cfgBk, "192.168.132.234:32799")
@@ -1426,10 +1421,9 @@ func TestAlternateAddressesExternalConfigNoPorts(t *testing.T) {
 	var cfg *routeConfig
 	agent.cfgManager = newConfigManager(configManagerProperties{
 		NetworkType: "external",
-	}, func(config *routeConfig) bool {
+	}, []routeConfigWatch{func(config *routeConfig) {
 		cfg = config
-		return true
-	}, func() {
+	}}, func() {
 
 	})
 	agent.cfgManager.OnFirstRouteConfig(cfgBk, "192.168.132.234:32799")
@@ -1455,9 +1449,8 @@ func TestAlternateAddressesInvalidConfig(t *testing.T) {
 	agent := Agent{}
 	agent.cfgManager = newConfigManager(configManagerProperties{
 		NetworkType: "invalid",
-	}, func(config *routeConfig) bool {
-		return false
-	}, func() {
+	}, []routeConfigWatch{func(config *routeConfig) {
+	}}, func() {
 
 	})
 	valid := agent.cfgManager.OnFirstRouteConfig(cfgBk, "192.168.132.234:32799")

@@ -209,16 +209,18 @@ func (cfg *cfgBucket) BuildRouteConfig(useSsl bool, networkType string, firstCon
 	}
 
 	rc := &routeConfig{
-		revID:        cfg.Rev,
-		uuid:         cfg.UUID,
-		name:         cfg.Name,
-		kvServerList: kvServerList,
-		capiEpList:   capiEpList,
-		mgmtEpList:   mgmtEpList,
-		n1qlEpList:   n1qlEpList,
-		ftsEpList:    ftsEpList,
-		cbasEpList:   cbasEpList,
-		bktType:      bktType,
+		revID:                  cfg.Rev,
+		uuid:                   cfg.UUID,
+		name:                   cfg.Name,
+		kvServerList:           kvServerList,
+		capiEpList:             capiEpList,
+		mgmtEpList:             mgmtEpList,
+		n1qlEpList:             n1qlEpList,
+		ftsEpList:              ftsEpList,
+		cbasEpList:             cbasEpList,
+		bktType:                bktType,
+		clusterCapabilities:    cfg.ClusterCapabilities,
+		clusterCapabilitiesVer: cfg.ClusterCapabilitiesVer,
 	}
 
 	if bktType == bktTypeCouchbase {
@@ -230,14 +232,6 @@ func (cfg *cfgBucket) BuildRouteConfig(useSsl bool, networkType string, firstCon
 	}
 
 	return rc
-}
-
-func (cfg *cfgBucket) ClusterCaps() map[string][]string {
-	return cfg.ClusterCapabilities
-}
-
-func (cfg *cfgBucket) ClusterCapsVer() []int {
-	return cfg.ClusterCapabilitiesVer
 }
 
 type serverEps struct {
