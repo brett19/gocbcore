@@ -107,7 +107,7 @@ func (agent *Agent) bootstrap(client *memdClient, deadline time.Time) error {
 
 	bucket := agent.bucket()
 	features := agent.helloFeatures()
-	clientInfoStr := agent.clientInfoString(client.connID)
+	clientInfoStr := clientInfoString(client.connID, agent.userAgent)
 	authMechanisms := agent.authMechanisms
 
 	helloCh, err := sclient.ExecHello(clientInfoStr, features, deadline)
@@ -272,10 +272,10 @@ func (agent *Agent) bootstrap(client *memdClient, deadline time.Time) error {
 	return nil
 }
 
-func (agent *Agent) clientInfoString(connID string) string {
+func clientInfoString(connID, userAgent string) string {
 	agentName := "gocbcore/" + goCbCoreVersionStr
-	if agent.userAgent != "" {
-		agentName += " " + agent.userAgent
+	if userAgent != "" {
+		agentName += " " + userAgent
 	}
 
 	clientInfo := struct {

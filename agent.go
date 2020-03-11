@@ -52,7 +52,7 @@ type Agent struct {
 	serverFailuresLock sync.Mutex
 	serverFailures     map[string]time.Time
 
-	httpCli *http.Client
+	httpComponent *httpComponent
 
 	confHTTPRedialPeriod time.Duration
 	confHTTPRetryDelay   time.Duration
@@ -107,7 +107,7 @@ func (agent *Agent) SetServerConnectTimeout(timeout time.Duration) {
 // Couchbase Server.  You must still specify authentication information
 // for any dispatched requests.
 func (agent *Agent) HTTPClient() *http.Client {
-	return agent.httpCli
+	return agent.httpComponent.cli
 }
 
 func (agent *Agent) getErrorMap() *kvErrorMap {
@@ -245,7 +245,6 @@ func createAgent(config *AgentConfig, initFn memdInitFunc) (*Agent, error) {
 		auth:        config.Auth,
 		tlsConfig:   tlsConfig,
 		initFn:      initFn,
-		httpCli:     httpCli,
 		closeNotify: make(chan struct{}),
 		tracer:      tracer,
 
@@ -288,6 +287,7 @@ func createAgent(config *AgentConfig, initFn memdInitFunc) (*Agent, error) {
 		[]routeConfigWatch{c.kvMux.ApplyRoutingConfig, c.httpMux.ApplyRoutingConfig, c.clusterCapsMgr.UpdateClusterCapabilities},
 		c.onInvalidConfig,
 	)
+	c.httpComponent = newHTTPComponent(httpCli, c.httpMux, c.auth, c.userAgent)
 
 	connectTimeout := 60000 * time.Millisecond
 	if config.ConnectTimeout > 0 {
@@ -665,8 +665,7 @@ func (agent *Agent) tryStartHTTPLooper(httpAddrs []string) error {
 	httpController := newHTTPConfigController(
 		agent.bucket(),
 		httpPollerProperties{
-			httpCli:              agent.httpCli,
-			auth:                 agent.auth,
+			httpComponent:        agent.httpComponent,
 			confHTTPRetryDelay:   agent.confHTTPRetryDelay,
 			confHTTPRedialPeriod: agent.confHTTPRedialPeriod,
 		},
@@ -762,11 +761,7 @@ func (agent *Agent) Close() error {
 	<-agent.pollerController.Done()
 
 	// Close the transports so that they don't hold open goroutines.
-	if tsport, ok := agent.httpCli.Transport.(*http.Transport); ok {
-		tsport.CloseIdleConnections()
-	} else {
-		logDebugf("Could not close idle connections for transport")
-	}
+	agent.httpComponent.Close()
 
 	return routeCloseErr
 }

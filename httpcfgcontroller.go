@@ -4,7 +4,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"net/http"
 	"net/url"
 	"sync/atomic"
 	"time"
@@ -39,8 +38,7 @@ type httpConfigController struct {
 	watcher              func(config *cfgBucket)
 	confHTTPRetryDelay   time.Duration
 	confHTTPRedialPeriod time.Duration
-	auth                 AuthProvider
-	httpCli              *http.Client
+	httpComponent        *httpComponent
 	bucketName           string
 
 	looperStopSig chan struct{}
@@ -50,8 +48,7 @@ type httpConfigController struct {
 type httpPollerProperties struct {
 	confHTTPRetryDelay   time.Duration
 	confHTTPRedialPeriod time.Duration
-	auth                 AuthProvider
-	httpCli              *http.Client
+	httpComponent        *httpComponent
 }
 
 func newHTTPConfigController(bucketName string, props httpPollerProperties, muxer *httpMux,
@@ -61,8 +58,7 @@ func newHTTPConfigController(bucketName string, props httpPollerProperties, muxe
 		watcher:              watcher,
 		confHTTPRedialPeriod: props.confHTTPRedialPeriod,
 		confHTTPRetryDelay:   props.confHTTPRetryDelay,
-		auth:                 props.auth,
-		httpCli:              props.httpCli,
+		httpComponent:        props.httpComponent,
 		bucketName:           bucketName,
 
 		looperStopSig: make(chan struct{}),
@@ -92,8 +88,15 @@ func (hcc *httpConfigController) DoLoop(firstCfgFn func(*cfgBucket, string, erro
 	isFirstTry := true
 
 	logDebugf("HTTP Looper starting.")
+
 Looper:
 	for {
+		select {
+		case <-hcc.looperStopSig:
+			break Looper
+		default:
+		}
+
 		var pickedSrv string
 		for _, srv := range hcc.muxer.MgmtEps() {
 			if seenNodes[srv] >= iterNum {
@@ -136,7 +139,7 @@ Looper:
 		hostname := hostnameFromURI(pickedSrv)
 		logDebugf("HTTP Hostname: %s.", hostname)
 
-		var resp *http.Response
+		var resp *HTTPResponse
 		// 1 on success, 0 on failure for node, -1 for generic failure
 		var doConfigRequest func(bool) int
 
@@ -146,24 +149,18 @@ Looper:
 				streamPath = "bucketsStreaming"
 			}
 			// HTTP request time!
-			uri := fmt.Sprintf("%s/pools/default/%s/%s", pickedSrv, streamPath, hcc.bucketName)
-			logDebugf("Requesting config from: %s.", uri)
+			uri := fmt.Sprintf("/pools/default/%s/%s", streamPath, hcc.bucketName)
+			logDebugf("Requesting config from: %s/%s.", pickedSrv, uri)
 
-			req, err := http.NewRequest("GET", uri, nil)
-			if err != nil {
-				logDebugf("Failed to build HTTP config request. %v", err)
-				return 0
+			req := &httpRequest{
+				Service:  MgmtService,
+				Method:   "GET",
+				Path:     uri,
+				Endpoint: pickedSrv,
 			}
 
-			creds, err := getMgmtAuthCreds(hcc.auth, pickedSrv)
-			if err != nil {
-				logDebugf("Failed to build Get config credentials. %v", err)
-				return 0
-			}
-
-			req.SetBasicAuth(creds.Username, creds.Password)
-
-			resp, err = hcc.httpCli.Do(req)
+			var err error
+			resp, err = hcc.httpComponent.ExecHTTPRequest(req)
 			if err != nil {
 				logDebugf("Failed to connect to host. %v", err)
 				return 0
