@@ -10,12 +10,26 @@ type memdGetClientFunc func(hostPort string) (*memdClient, error)
 type memdClientMux struct {
 	pipelines []*memdPipeline
 	deadPipe  *memdPipeline
+
+	kvServerList []string
+	bktType      bucketType
+	vbMap        *vbucketMap
+	ketamaMap    *ketamaContinuum
+	uuid         string
+	revID        int64
 }
 
-func newMemdClientMux(hostPorts []string, poolSize int, queueSize int, getClientFn memdGetClientFunc) *memdClientMux {
-	mux := &memdClientMux{}
+func newMemdClientMux(cfg *routeConfig, poolSize int, queueSize int, getClientFn memdGetClientFunc) *memdClientMux {
+	mux := &memdClientMux{
+		kvServerList: cfg.kvServerList,
+		bktType:      cfg.bktType,
+		vbMap:        cfg.vbMap,
+		ketamaMap:    cfg.ketamaMap,
+		uuid:         cfg.uuid,
+		revID:        cfg.revID,
+	}
 
-	for _, hostPort := range hostPorts {
+	for _, hostPort := range mux.kvServerList {
 		hostPort := hostPort
 
 		getCurClientFn := func() (*memdClient, error) {
@@ -29,6 +43,10 @@ func newMemdClientMux(hostPorts []string, poolSize int, queueSize int, getClient
 	mux.deadPipe = newDeadPipeline(queueSize)
 
 	return mux
+}
+
+func (mux *memdClientMux) BucketType() bucketType {
+	return mux.bktType
 }
 
 func (mux *memdClientMux) NumPipelines() int {
@@ -101,7 +119,7 @@ func (mux *memdClientMux) Takeover(oldMux *memdClientMux) {
 		}
 	}
 
-	if oldMux.deadPipe != nil {
+	if oldMux != nil && oldMux.deadPipe != nil {
 		err := oldMux.deadPipe.Close()
 		if err != nil {
 			logErrorf("Failed to properly close abandoned dead pipe (%s)", err)

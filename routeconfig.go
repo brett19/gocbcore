@@ -87,5 +87,5 @@ func (config *routeConfig) IsValid() bool {
 }
 
 func (config *routeConfig) IsGCCCPConfig() bool {
-	return config.name == ""
+	return config.bktType == bktTypeNone
 }

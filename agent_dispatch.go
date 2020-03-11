@@ -59,7 +59,7 @@ func (agent *Agent) waitAndRetryOperation(req *memdQRequest, reason RetryReason)
 	if shouldRetry {
 		go func() {
 			time.Sleep(retryTime.Sub(time.Now()))
-			agent.routeCfgMgr.RequeueDirect(req, true)
+			agent.kvMux.RequeueDirect(req, true)
 		}()
 		return true
 	}
@@ -345,7 +345,7 @@ func (agent *Agent) dispatchOpToAddress(req *memdQRequest, address string) (Pend
 	req.owner = agent
 	req.dispatchTime = time.Now()
 
-	err := agent.routeCfgMgr.DispatchDirectToAddress(req, address)
+	err := agent.kvMux.DispatchDirectToAddress(req, address)
 	if err != nil {
 		shortCircuit, routeErr := agent.handleOpRoutingResp(nil, req, err)
 		if shortCircuit {

@@ -86,7 +86,8 @@ type Agent struct {
 
 	cfgManager       *configManager
 	pollerController *pollerController
-	routeCfgMgr      *routeConfigManager
+	kvMux            *kvMux
+	httpMux          *httpMux
 	clusterCapsMgr   *clusterCapabilitiesManager
 
 	agentConfig
@@ -277,14 +278,15 @@ func createAgent(config *AgentConfig, initFn memdInitFunc) (*Agent, error) {
 		pollerController: &pollerController{},
 	}
 	c.cidMgr = newCollectionIDManager(c, maxQueueSize)
-	c.routeCfgMgr = newRouteConfigManager(c.maxQueueSize, c.kvPoolSize, c.slowDialMemdClient, c.circuitBreakerConfig)
+	c.kvMux = newKVMux(c.maxQueueSize, c.kvPoolSize, c.slowDialMemdClient)
+	c.httpMux = newHTTPMux(c.circuitBreakerConfig)
 	c.clusterCapsMgr = newClusterCapabilitiesManager()
 	c.cfgManager = newConfigManager(
 		configManagerProperties{
 			NetworkType: config.NetworkType,
 			UseSSL:      config.UseTLS,
 		},
-		[]routeConfigWatch{c.routeCfgMgr.ApplyRoutingConfig, c.clusterCapsMgr.UpdateClusterCapabilities},
+		[]routeConfigWatch{c.kvMux.ApplyRoutingConfig, c.httpMux.ApplyRoutingConfig, c.clusterCapsMgr.UpdateClusterCapabilities},
 		c.onInvalidConfig,
 	)
 
@@ -501,10 +503,9 @@ func (agent *Agent) connectWithBucket(memdAddrs, httpAddrs []string, deadline ti
 		agent.cacheClient(client)
 
 		agent.pollerController.StartCCCPLooper(cccpPollerProperties{
-			closeNotify:        agent.closeNotify,
 			confCccpMaxWait:    agent.confCccpMaxWait,
 			confCccpPollPeriod: agent.confCccpPollPeriod,
-		}, agent.cfgManager.OnNewConfig, agent.routeCfgMgr.Get)
+		}, agent.kvMux, agent.cfgManager.OnNewConfig)
 
 		return nil
 	}
@@ -609,17 +610,16 @@ func (agent *Agent) connectG3CP(memdAddrs, httpAddrs []string, deadline time.Tim
 	// In the case of G3CP we don't need to worry about connecting over HTTP as there's no bucket.
 	// If we've got cached clients then we made a connection and we want to use gcccp so no errors here.
 	agent.cachedHTTPEndpoints = httpAddrs
-	if !agent.routeCfgMgr.SupportsGCCCP() {
+	if !agent.kvMux.SupportsGCCCP() {
 		// No error but we don't support GCCCP.
 		logDebugf("GCCCP unsupported, connections being held in trust.")
 		return nil
 	}
 
 	agent.pollerController.StartCCCPLooper(cccpPollerProperties{
-		closeNotify:        agent.closeNotify,
 		confCccpMaxWait:    agent.confCccpMaxWait,
 		confCccpPollPeriod: agent.confCccpPollPeriod,
-	}, agent.cfgManager.OnNewConfig, agent.routeCfgMgr.Get)
+	}, agent.kvMux, agent.cfgManager.OnNewConfig)
 
 	return nil
 
@@ -650,17 +650,23 @@ func (agent *Agent) tryStartHTTPLooper(httpAddrs []string) error {
 		}
 	}
 
+	// We need to inject a fake config to jump start the http looper.
+	agent.httpMux.ApplyRoutingConfig(&routeConfig{
+		revID:      -1,
+		mgmtEpList: epList,
+	})
+
 	logDebugf("Starting HTTP looper! %v", epList)
 	agent.pollerController.StartHTTPLooper(
+		agent.bucket(),
 		httpPollerProperties{
-			closeNotify:          agent.closeNotify,
 			httpCli:              agent.httpCli,
 			auth:                 agent.auth,
 			confHTTPRetryDelay:   agent.confHTTPRetryDelay,
 			confHTTPRedialPeriod: agent.confHTTPRedialPeriod,
 		},
+		agent.httpMux,
 		agent.cfgManager.OnNewConfig,
-		agent.routeCfgMgr.Get,
 		func(cfg *cfgBucket, srcServer string, err error) bool {
 			if err != nil {
 				signal <- err
@@ -725,14 +731,11 @@ func (agent *Agent) onInvalidConfig() {
 // Close shuts down the agent, disconnecting from all servers and failing
 // any outstanding operations with ErrShutdown.
 func (agent *Agent) Close() error {
-	agent.configLock.Lock()
-
-	routeCloseErr := agent.routeCfgMgr.Close()
+	routeCloseErr := agent.kvMux.Close()
+	agent.pollerController.StopLooper()
 
 	// Notify everyone that we are shutting down
 	close(agent.closeNotify)
-
-	agent.configLock.Unlock()
 
 	agent.cachedClientsLock.Lock()
 	for _, cli := range agent.cachedClients {
@@ -766,44 +769,44 @@ func (agent *Agent) IsSecure() bool {
 
 // BucketUUID returns the UUID of the bucket we are connected to.
 func (agent *Agent) BucketUUID() string {
-	return agent.routeCfgMgr.ConfigUUID()
+	return agent.kvMux.ConfigUUID()
 }
 
 // KeyToVbucket translates a particular key to its assigned vbucket.
 func (agent *Agent) KeyToVbucket(key []byte) uint16 {
-	return agent.routeCfgMgr.KeyToVbucket(key)
+	return agent.kvMux.KeyToVbucket(key)
 }
 
 // KeyToServer translates a particular key to its assigned server index.
 func (agent *Agent) KeyToServer(key []byte, replicaIdx uint32) int {
-	return agent.routeCfgMgr.KeyToServer(key, replicaIdx)
+	return agent.kvMux.KeyToServer(key, replicaIdx)
 }
 
 // VbucketToServer returns the server index for a particular vbucket.
 func (agent *Agent) VbucketToServer(vbID uint16, replicaIdx uint32) int {
-	return agent.routeCfgMgr.VbucketToServer(vbID, replicaIdx)
+	return agent.kvMux.VbucketToServer(vbID, replicaIdx)
 }
 
 // NumVbuckets returns the number of VBuckets configured on the
 // connected cluster.
 func (agent *Agent) NumVbuckets() int {
-	return agent.routeCfgMgr.NumVBuckets()
+	return agent.kvMux.NumVBuckets()
 }
 
 // NumReplicas returns the number of replicas configured on the
 // connected cluster.
 func (agent *Agent) NumReplicas() int {
-	return agent.routeCfgMgr.NumReplicas()
+	return agent.kvMux.NumReplicas()
 }
 
 // NumServers returns the number of servers accessible for K/V.
 func (agent *Agent) NumServers() int {
-	return agent.routeCfgMgr.NumPipelines()
+	return agent.kvMux.NumPipelines()
 }
 
 // VbucketsOnServer returns the list of VBuckets for a server.
 func (agent *Agent) VbucketsOnServer(index int) []uint16 {
-	return agent.routeCfgMgr.VbucketsOnServer(index)
+	return agent.kvMux.VbucketsOnServer(index)
 }
 
 // ClientID returns the unique id for this agent
@@ -814,31 +817,31 @@ func (agent *Agent) ClientID() string {
 // CapiEps returns all the available endpoints for performing
 // map-reduce queries.
 func (agent *Agent) CapiEps() []string {
-	return agent.routeCfgMgr.CapiEps()
+	return agent.httpMux.CapiEps()
 }
 
 // MgmtEps returns all the available endpoints for performing
 // management queries.
 func (agent *Agent) MgmtEps() []string {
-	return agent.routeCfgMgr.MgmtEps()
+	return agent.httpMux.MgmtEps()
 }
 
 // N1qlEps returns all the available endpoints for performing
 // N1QL queries.
 func (agent *Agent) N1qlEps() []string {
-	return agent.routeCfgMgr.N1qlEps()
+	return agent.httpMux.N1qlEps()
 }
 
 // FtsEps returns all the available endpoints for performing
 // FTS queries.
 func (agent *Agent) FtsEps() []string {
-	return agent.routeCfgMgr.FtsEps()
+	return agent.httpMux.FtsEps()
 }
 
 // CbasEps returns all the available endpoints for performing
 // CBAS queries.
 func (agent *Agent) CbasEps() []string {
-	return agent.routeCfgMgr.CbasEps()
+	return agent.httpMux.CbasEps()
 }
 
 // HasCollectionsSupport verifies whether or not collections are available on the agent.
@@ -848,7 +851,7 @@ func (agent *Agent) HasCollectionsSupport() bool {
 
 // UsingGCCCP returns whether or not the Agent is currently using GCCCP polling.
 func (agent *Agent) UsingGCCCP() bool {
-	return agent.routeCfgMgr.SupportsGCCCP()
+	return agent.kvMux.SupportsGCCCP()
 }
 
 func (agent *Agent) bucket() string {

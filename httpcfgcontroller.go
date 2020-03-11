@@ -35,35 +35,38 @@ func hostnameFromURI(uri string) string {
 }
 
 type httpConfigController struct {
-	routingInfo          func() (*routeConfig, *memdClientMux)
+	muxer                *httpMux
 	watcher              func(config *cfgBucket)
 	confHTTPRetryDelay   time.Duration
 	confHTTPRedialPeriod time.Duration
 	auth                 AuthProvider
 	httpCli              *http.Client
+	bucketName           string
 
-	closeNotify   chan struct{}
+	looperStopSig chan struct{}
 	looperDoneSig chan struct{}
 }
 
 type httpPollerProperties struct {
 	confHTTPRetryDelay   time.Duration
 	confHTTPRedialPeriod time.Duration
-	closeNotify          chan struct{}
 	auth                 AuthProvider
 	httpCli              *http.Client
 }
 
-func newHTTPConfigController(props httpPollerProperties, watcher func(config *cfgBucket), routingInfo func() (*routeConfig, *memdClientMux)) *httpConfigController {
+func newHTTPConfigController(bucketName string, props httpPollerProperties, muxer *httpMux,
+	watcher func(config *cfgBucket)) *httpConfigController {
 	return &httpConfigController{
-		routingInfo:          routingInfo,
+		muxer:                muxer,
 		watcher:              watcher,
 		confHTTPRedialPeriod: props.confHTTPRedialPeriod,
 		confHTTPRetryDelay:   props.confHTTPRetryDelay,
-		closeNotify:          props.closeNotify,
 		auth:                 props.auth,
 		httpCli:              props.httpCli,
-		looperDoneSig:        make(chan struct{}),
+		bucketName:           bucketName,
+
+		looperStopSig: make(chan struct{}),
+		looperDoneSig: make(chan struct{}),
 	}
 }
 
@@ -76,7 +79,7 @@ func (hcc *httpConfigController) Done() chan struct{} {
 }
 
 func (hcc *httpConfigController) Stop() {
-
+	close(hcc.looperStopSig)
 }
 
 func (hcc *httpConfigController) DoLoop(firstCfgFn func(*cfgBucket, string, error) bool) {
@@ -89,15 +92,10 @@ func (hcc *httpConfigController) DoLoop(firstCfgFn func(*cfgBucket, string, erro
 	isFirstTry := true
 
 	logDebugf("HTTP Looper starting.")
+Looper:
 	for {
-		routingInfo, _ := hcc.routingInfo()
-		if routingInfo == nil {
-			// Shutdown the looper if the agent is shutdown
-			break
-		}
-
 		var pickedSrv string
-		for _, srv := range routingInfo.mgmtEpList {
+		for _, srv := range hcc.muxer.MgmtEps() {
 			if seenNodes[srv] >= iterNum {
 				continue
 			}
@@ -119,8 +117,9 @@ func (hcc *httpConfigController) DoLoop(firstCfgFn func(*cfgBucket, string, erro
 				// Wait for a period before trying again if there was a problem...
 				// We also watch for the client being shut down.
 				select {
+				case <-hcc.looperStopSig:
+					break Looper
 				case <-time.After(waitPeriod):
-				case <-hcc.closeNotify:
 				}
 			}
 			logDebugf("Looping again.")
@@ -147,7 +146,7 @@ func (hcc *httpConfigController) DoLoop(firstCfgFn func(*cfgBucket, string, erro
 				streamPath = "bucketsStreaming"
 			}
 			// HTTP request time!
-			uri := fmt.Sprintf("%s/pools/default/%s/%s", pickedSrv, streamPath, routingInfo.name)
+			uri := fmt.Sprintf("%s/pools/default/%s/%s", pickedSrv, streamPath, hcc.bucketName)
 			logDebugf("Requesting config from: %s.", uri)
 
 			req, err := http.NewRequest("GET", uri, nil)
@@ -205,7 +204,7 @@ func (hcc *httpConfigController) DoLoop(firstCfgFn func(*cfgBucket, string, erro
 		go func() {
 			select {
 			case <-time.After(maxConnPeriod):
-			case <-hcc.closeNotify:
+			case <-hcc.looperStopSig:
 			}
 
 			logDebugf("Automatically resetting our HTTP connection")

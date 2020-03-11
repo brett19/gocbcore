@@ -1107,8 +1107,8 @@ type StatsExCallback func(*StatsResult, error)
 func (agent *Agent) StatsEx(opts StatsOptions, cb StatsExCallback) (PendingOp, error) {
 	tracer := agent.createOpTrace("StatsEx", opts.TraceContext)
 
-	config, muxer := agent.routeCfgMgr.Get()
-	if config == nil {
+	muxer := agent.kvMux.Get()
+	if muxer == nil {
 		tracer.Finish()
 		return nil, errShutdown
 	}
@@ -1132,7 +1132,7 @@ func (agent *Agent) StatsEx(opts StatsOptions, cb StatsExCallback) (PendingOp, e
 	case VBucketIDStatsTarget:
 		expected = 1
 
-		srvIdx, err := config.vbMap.NodeByVbucket(target.VbID, 0)
+		srvIdx, err := muxer.vbMap.NodeByVbucket(target.VbID, 0)
 		if err != nil {
 			return nil, err
 		}

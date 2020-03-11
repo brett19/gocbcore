@@ -10,16 +10,16 @@ type configController interface {
 	Stop()
 }
 
-func (pc *pollerController) StartCCCPLooper(properties cccpPollerProperties, watcher func(config *cfgBucket), getMuxer func() (*routeConfig, *memdClientMux)) {
-	cccpController := newCCCPConfigController(properties, watcher, getMuxer)
+func (pc *pollerController) StartCCCPLooper(properties cccpPollerProperties, muxer *kvMux, watcher func(config *cfgBucket)) {
+	cccpController := newCCCPConfigController(properties, muxer, watcher)
 	go cccpController.DoLoop()
 
 	pc.activeController = cccpController
 }
 
-func (pc *pollerController) StartHTTPLooper(props httpPollerProperties, watcher func(config *cfgBucket), getCfg func() (*routeConfig, *memdClientMux),
-	firstCfgFn func(*cfgBucket, string, error) bool) {
-	controller := newHTTPConfigController(props, watcher, getCfg)
+func (pc *pollerController) StartHTTPLooper(bucketName string, props httpPollerProperties, muxer *httpMux,
+	watcher func(config *cfgBucket), firstCfgFn func(*cfgBucket, string, error) bool) {
+	controller := newHTTPConfigController(bucketName, props, muxer, watcher)
 	go controller.DoLoop(firstCfgFn)
 
 	pc.activeController = controller

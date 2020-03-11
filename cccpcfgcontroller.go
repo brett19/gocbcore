@@ -6,11 +6,10 @@ import (
 )
 
 type cccpConfigController struct {
-	getMuxer           func() (*routeConfig, *memdClientMux)
+	muxer              *kvMux
 	watcher            func(config *cfgBucket)
 	confCccpPollPeriod time.Duration
 	confCccpMaxWait    time.Duration
-	closeNotify        chan struct{}
 
 	// Used exclusively for testing to overcome GOCBC-780. It allows a test to pause the cccp looper preventing
 	// unwanted requests from being sent to the mock once it has been setup for error map testing.
@@ -20,13 +19,12 @@ type cccpConfigController struct {
 	looperDoneSig chan struct{}
 }
 
-func newCCCPConfigController(props cccpPollerProperties, watcher func(config *cfgBucket), getMuxer func() (*routeConfig, *memdClientMux)) *cccpConfigController {
+func newCCCPConfigController(props cccpPollerProperties, muxer *kvMux, watcher func(config *cfgBucket)) *cccpConfigController {
 	return &cccpConfigController{
-		getMuxer:           getMuxer,
+		muxer:              muxer,
 		watcher:            watcher,
 		confCccpPollPeriod: props.confCccpPollPeriod,
 		confCccpMaxWait:    props.confCccpMaxWait,
-		closeNotify:        props.closeNotify,
 
 		looperPauseSig: make(chan bool),
 		looperStopSig:  make(chan struct{}),
@@ -37,7 +35,6 @@ func newCCCPConfigController(props cccpPollerProperties, watcher func(config *cf
 type cccpPollerProperties struct {
 	confCccpPollPeriod time.Duration
 	confCccpMaxWait    time.Duration
-	closeNotify        chan struct{}
 }
 
 func (ccc *cccpConfigController) Pause(paused bool) {
@@ -45,7 +42,7 @@ func (ccc *cccpConfigController) Pause(paused bool) {
 }
 
 func (ccc *cccpConfigController) Stop() {
-	ccc.looperStopSig <- struct{}{}
+	close(ccc.looperStopSig)
 }
 
 func (ccc *cccpConfigController) Done() chan struct{} {
@@ -69,19 +66,19 @@ Looper:
 		case pause := <-ccc.looperPauseSig:
 			paused = pause
 		case <-time.After(tickTime):
-		case <-ccc.closeNotify:
 		}
 
 		if paused {
 			continue
 		}
 
-		cfg, muxer := ccc.getMuxer()
-		if cfg == nil {
+		iter, err := ccc.muxer.PipelineIterator()
+		if err != nil {
+			// If we have an error it indicates the client is shut down.
 			break
 		}
 
-		numNodes := muxer.NumPipelines()
+		numNodes := iter.Len()
 		if numNodes == 0 {
 			logDebugf("CCCPPOLL: No nodes available to poll")
 			continue
@@ -91,12 +88,10 @@ Looper:
 			nodeIdx = rand.Intn(numNodes)
 		}
 
+		iter.Offset(nodeIdx)
+
 		var foundConfig *cfgBucket
-		for nodeOff := 0; nodeOff < numNodes; nodeOff++ {
-			nodeIdx = (nodeIdx + 1) % numNodes
-
-			pipeline := muxer.GetPipeline(nodeIdx)
-
+		for pipeline := iter.Next(); pipeline != nil; {
 			cccpBytes, err := ccc.getClusterConfig(pipeline)
 			if err != nil {
 				logDebugf("CCCPPOLL: Failed to retrieve CCCP config. %v", err)

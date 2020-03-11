@@ -64,15 +64,15 @@ type PingKvExCallback func(*PingKvResult, error)
 // PingKvEx pings all of the servers we are connected to and returns
 // a report regarding the pings that were performed.
 func (agent *Agent) PingKvEx(opts PingKvOptions, cb PingKvExCallback) (PendingOp, error) {
-	config, clientMux := agent.routeCfgMgr.Get()
-	if config == nil {
+	clientMux := agent.kvMux.Get()
+	if clientMux == nil {
 		return nil, errShutdown
 	}
 
 	op := &pingOp{
 		callback:  cb,
 		remaining: 1,
-		configRev: config.revID,
+		configRev: clientMux.revID,
 	}
 
 	pingStartTime := time.Now()
@@ -176,8 +176,8 @@ type DiagnosticInfo struct {
 // states.
 func (agent *Agent) Diagnostics() (*DiagnosticInfo, error) {
 	for {
-		config, clientMux := agent.routeCfgMgr.Get()
-		if config == nil {
+		clientMux := agent.kvMux.Get()
+		if clientMux == nil {
 			return nil, errShutdown
 		}
 
@@ -215,10 +215,10 @@ func (agent *Agent) Diagnostics() (*DiagnosticInfo, error) {
 			pipeline.clientsLock.Unlock()
 		}
 
-		endConfig, _ := agent.routeCfgMgr.Get()
-		if endConfig == config {
+		endMux := agent.kvMux.Get()
+		if endMux == clientMux {
 			return &DiagnosticInfo{
-				ConfigRev: config.revID,
+				ConfigRev: clientMux.revID,
 				MemdConns: conns,
 			}, nil
 		}
