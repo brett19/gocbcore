@@ -85,7 +85,7 @@ type Agent struct {
 	circuitBreakerConfig CircuitBreakerConfig
 
 	cfgManager       *configManager
-	pollerController *pollerController
+	pollerController configPollerController
 	kvMux            *kvMux
 	httpMux          *httpMux
 	clusterCapsMgr   *clusterCapabilitiesManager
@@ -275,7 +275,6 @@ func createAgent(config *AgentConfig, initFn memdInitFunc) (*Agent, error) {
 			useDurations:         config.UseDurations,
 			noRootTraceSpans:     config.NoRootTraceSpans,
 		},
-		pollerController: &pollerController{},
 	}
 	c.cidMgr = newCollectionIDManager(c, maxQueueSize)
 	c.kvMux = newKVMux(c.maxQueueSize, c.kvPoolSize, c.slowDialMemdClient)
@@ -502,10 +501,13 @@ func (agent *Agent) connectWithBucket(memdAddrs, httpAddrs []string, deadline ti
 
 		agent.cacheClient(client)
 
-		agent.pollerController.StartCCCPLooper(cccpPollerProperties{
+		cccpController := newCCCPConfigController(cccpPollerProperties{
 			confCccpMaxWait:    agent.confCccpMaxWait,
 			confCccpPollPeriod: agent.confCccpPollPeriod,
 		}, agent.kvMux, agent.cfgManager.OnNewConfig)
+
+		go cccpController.DoLoop()
+		agent.pollerController = cccpController
 
 		return nil
 	}
@@ -616,10 +618,13 @@ func (agent *Agent) connectG3CP(memdAddrs, httpAddrs []string, deadline time.Tim
 		return nil
 	}
 
-	agent.pollerController.StartCCCPLooper(cccpPollerProperties{
+	cccpController := newCCCPConfigController(cccpPollerProperties{
 		confCccpMaxWait:    agent.confCccpMaxWait,
 		confCccpPollPeriod: agent.confCccpPollPeriod,
 	}, agent.kvMux, agent.cfgManager.OnNewConfig)
+
+	go cccpController.DoLoop()
+	agent.pollerController = cccpController
 
 	return nil
 
@@ -657,7 +662,7 @@ func (agent *Agent) tryStartHTTPLooper(httpAddrs []string) error {
 	})
 
 	logDebugf("Starting HTTP looper! %v", epList)
-	agent.pollerController.StartHTTPLooper(
+	httpController := newHTTPConfigController(
 		agent.bucket(),
 		httpPollerProperties{
 			httpCli:              agent.httpCli,
@@ -667,6 +672,9 @@ func (agent *Agent) tryStartHTTPLooper(httpAddrs []string) error {
 		},
 		agent.httpMux,
 		agent.cfgManager.OnNewConfig,
+	)
+
+	go httpController.DoLoop(
 		func(cfg *cfgBucket, srcServer string, err error) bool {
 			if err != nil {
 				signal <- err
@@ -699,6 +707,7 @@ func (agent *Agent) tryStartHTTPLooper(httpAddrs []string) error {
 			signal <- nil
 			return true
 		})
+	agent.pollerController = httpController
 
 	err := <-signal
 	if err != nil {
@@ -732,7 +741,7 @@ func (agent *Agent) onInvalidConfig() {
 // any outstanding operations with ErrShutdown.
 func (agent *Agent) Close() error {
 	routeCloseErr := agent.kvMux.Close()
-	agent.pollerController.StopLooper()
+	agent.pollerController.Stop()
 
 	// Notify everyone that we are shutting down
 	close(agent.closeNotify)
