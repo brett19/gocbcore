@@ -1,6 +1,7 @@
 package gocbcore
 
 import (
+	"container/list"
 	"errors"
 	"sort"
 	"sync/atomic"
@@ -24,13 +25,13 @@ func newKVMux(qSize, poolSize int, getClientFn memdGetClientFunc) *kvMux {
 	}
 }
 
-func (mux *kvMux) Get() *memdClientMux {
-	return (*memdClientMux)(atomic.LoadPointer(&mux.muxPtr))
+func (mux *kvMux) GetState() *kvMuxState {
+	return (*kvMuxState)(atomic.LoadPointer(&mux.muxPtr))
 }
 
-func (mux *kvMux) Update(old, new *memdClientMux) bool {
+func (mux *kvMux) updateState(old, new *kvMuxState) bool {
 	if new == nil {
-		logErrorf("Attempted to update to nil memdClientMux")
+		logErrorf("Attempted to update to nil kvMuxState")
 		return false
 	}
 
@@ -39,50 +40,42 @@ func (mux *kvMux) Update(old, new *memdClientMux) bool {
 	}
 
 	if atomic.SwapPointer(&mux.muxPtr, unsafe.Pointer(new)) != nil {
-		logErrorf("Updated from nil attempted on initialized memdClientMux")
+		logErrorf("Updated from nil attempted on initialized kvMuxState")
 		return false
 	}
 
 	return true
 }
 
-func (mux *kvMux) Clear() *memdClientMux {
+func (mux *kvMux) clear() *kvMuxState {
 	val := atomic.SwapPointer(&mux.muxPtr, nil)
-	return (*memdClientMux)(val)
+	return (*kvMuxState)(val)
 }
 
 //  This method MUST NEVER BLOCK due to its use from various contention points.
 func (mux *kvMux) ApplyRoutingConfig(cfg *routeConfig) {
-	oldClientMux := mux.Get()
-
-	var newClientMux *memdClientMux
-	if cfg.IsGCCCPConfig() {
-		newClientMux = newMemdClientMux(cfg, 1, mux.queueSize, mux.getClientFn)
-	} else {
-		newClientMux = newMemdClientMux(cfg, mux.poolSize, mux.queueSize, mux.getClientFn)
-	}
-
-	logDebugf("Switching kv mux routing data (update)...")
-	logDebugf("New Routing Data:\n%s", cfg.DebugString())
+	oldClientMux := mux.GetState()
+	newClientMux := mux.newKVMuxState(cfg)
 
 	// Attempt to atomically update the routing data
-	if !mux.Update(oldClientMux, newClientMux) {
+	if !mux.updateState(oldClientMux, newClientMux) {
 		logErrorf("Someone preempted the config update, skipping update")
 		return
 	}
 
 	if oldClientMux == nil {
-		// This is a new agent so there is no existing muxer.  We can
-		// simply start the new muxer.
-		newClientMux.Start()
+		// There is no existing muxer.  We can simply start the new pipelines.
+		for _, pipeline := range newClientMux.pipelines {
+			pipeline.StartClients()
+		}
 	} else {
 		// Get the new muxer to takeover the pipelines from the older one
-		newClientMux.Takeover(oldClientMux)
+		mux.muxTakeover(oldClientMux, newClientMux)
 
 		// Gather all the requests from all the old pipelines and then
 		//  sort and redispatch them (which will use the new pipelines)
 		var requestList []*memdQRequest
-		oldClientMux.Drain(func(req *memdQRequest) {
+		mux.muxDrain(oldClientMux, func(req *memdQRequest) {
 			requestList = append(requestList, req)
 		})
 
@@ -97,7 +90,7 @@ func (mux *kvMux) ApplyRoutingConfig(cfg *routeConfig) {
 }
 
 func (mux *kvMux) ConfigUUID() string {
-	clientMux := mux.Get()
+	clientMux := mux.GetState()
 	if clientMux == nil {
 		return ""
 	}
@@ -105,7 +98,7 @@ func (mux *kvMux) ConfigUUID() string {
 }
 
 func (mux *kvMux) KeyToVbucket(key []byte) uint16 {
-	clientMux := mux.Get()
+	clientMux := mux.GetState()
 	if clientMux == nil || clientMux.vbMap == nil {
 		return 0
 	}
@@ -114,7 +107,7 @@ func (mux *kvMux) KeyToVbucket(key []byte) uint16 {
 }
 
 func (mux *kvMux) KeyToServer(key []byte, replicaIdx uint32) int {
-	clientMux := mux.Get()
+	clientMux := mux.GetState()
 	if clientMux.vbMap != nil {
 		serverIdx, err := clientMux.vbMap.NodeByKey(key, replicaIdx)
 		if err != nil {
@@ -137,7 +130,7 @@ func (mux *kvMux) KeyToServer(key []byte, replicaIdx uint32) int {
 }
 
 func (mux *kvMux) VbucketToServer(vbID uint16, replicaIdx uint32) int {
-	clientMux := mux.Get()
+	clientMux := mux.GetState()
 	if clientMux == nil || clientMux.vbMap == nil {
 		return 0
 	}
@@ -155,7 +148,7 @@ func (mux *kvMux) VbucketToServer(vbID uint16, replicaIdx uint32) int {
 }
 
 func (mux *kvMux) NumReplicas() int {
-	clientMux := mux.Get()
+	clientMux := mux.GetState()
 	if clientMux == nil {
 		return 0
 	}
@@ -168,7 +161,7 @@ func (mux *kvMux) NumReplicas() int {
 }
 
 func (mux *kvMux) BucketType() bucketType {
-	clientMux := mux.Get()
+	clientMux := mux.GetState()
 	if clientMux == nil {
 		return bktTypeInvalid
 	}
@@ -177,7 +170,7 @@ func (mux *kvMux) BucketType() bucketType {
 }
 
 func (mux *kvMux) VbucketsOnServer(index int) []uint16 {
-	clientMux := mux.Get()
+	clientMux := mux.GetState()
 	if clientMux == nil {
 		return nil
 	}
@@ -197,22 +190,22 @@ func (mux *kvMux) VbucketsOnServer(index int) []uint16 {
 }
 
 func (mux *kvMux) SupportsGCCCP() bool {
-	clientMux := mux.Get()
+	clientMux := mux.GetState()
 	return clientMux.BucketType() == bktTypeNone
 }
 
 func (mux *kvMux) NumVBuckets() int {
-	clientMux := mux.Get()
+	clientMux := mux.GetState()
 	return clientMux.vbMap.NumVbuckets()
 }
 
 func (mux *kvMux) NumPipelines() int {
-	clientMux := mux.Get()
+	clientMux := mux.GetState()
 	return clientMux.NumPipelines()
 }
 
 func (mux *kvMux) RouteRequest(req *memdQRequest) (*memdPipeline, error) {
-	clientMux := mux.Get()
+	clientMux := mux.GetState()
 	if clientMux == nil {
 		return nil, errShutdown
 	}
@@ -324,7 +317,7 @@ func (mux *kvMux) DispatchDirectToAddress(req *memdQRequest, address string) err
 	req.ReplicaIdx = -999999999
 
 	for {
-		clientMux := mux.Get()
+		clientMux := mux.GetState()
 		if clientMux == nil {
 			return errShutdown
 		}
@@ -357,19 +350,131 @@ func (mux *kvMux) DispatchDirectToAddress(req *memdQRequest, address string) err
 }
 
 func (mux *kvMux) Close() error {
-	clientMux := mux.Clear()
+	clientMux := mux.clear()
 
+	if clientMux == nil {
+		return errShutdown
+	}
+
+	var muxErr error
 	// Shut down the client multiplexer which will close all its queues
 	// effectively causing all the clients to shut down.
-	muxErr := clientMux.Close()
+	for _, pipeline := range clientMux.pipelines {
+		err := pipeline.Close()
+		if err != nil {
+			logErrorf("failed to shut down pipeline: %s", err)
+			muxErr = errCliInternalError
+		}
+	}
+
+	if clientMux.deadPipe != nil {
+		err := clientMux.deadPipe.Close()
+		if err != nil {
+			logErrorf("failed to shut down deadpipe: %s", err)
+			muxErr = errCliInternalError
+		}
+	}
 
 	// Drain all the pipelines and error their requests, then
 	//  drain the dead queue and error those requests.
-	clientMux.Drain(func(req *memdQRequest) {
+	cb := func(req *memdQRequest) {
 		req.tryCallback(nil, errShutdown)
-	})
+	}
+
+	mux.muxDrain(clientMux, cb)
 
 	return muxErr
+}
+
+func (mux *kvMux) muxDrain(clientMux *kvMuxState, cb func(req *memdQRequest)) {
+	for _, pipeline := range clientMux.pipelines {
+		logDebugf("Draining queue %+v", pipeline)
+		pipeline.Drain(cb)
+	}
+	if clientMux.deadPipe != nil {
+		clientMux.deadPipe.Drain(cb)
+	}
+}
+
+func (mux *kvMux) newKVMuxState(cfg *routeConfig) *kvMuxState {
+	poolSize := 1
+	if !cfg.IsGCCCPConfig() {
+		poolSize = mux.poolSize
+	}
+
+	pipelines := make([]*memdPipeline, len(cfg.kvServerList))
+	for i, hostPort := range cfg.kvServerList {
+		hostPort := hostPort
+
+		getCurClientFn := func() (*memdClient, error) {
+			return mux.getClientFn(hostPort)
+		}
+		pipeline := newPipeline(hostPort, poolSize, mux.queueSize, getCurClientFn)
+
+		pipelines[i] = pipeline
+	}
+
+	return newKVMuxState(cfg, pipelines, newDeadPipeline(mux.queueSize))
+}
+
+func (mux *kvMux) muxTakeover(oldMux, newMux *kvMuxState) {
+	oldPipelines := list.New()
+
+	// Gather all our old pipelines up for takeover and what not
+	if oldMux != nil {
+		for _, pipeline := range oldMux.pipelines {
+			oldPipelines.PushBack(pipeline)
+		}
+	}
+
+	// Build a function to find an existing pipeline
+	stealPipeline := func(address string) *memdPipeline {
+		for e := oldPipelines.Front(); e != nil; e = e.Next() {
+			pipeline, ok := e.Value.(*memdPipeline)
+			if !ok {
+				logErrorf("Failed to cast old pipeline")
+				continue
+			}
+
+			if pipeline.Address() == address {
+				oldPipelines.Remove(e)
+				return pipeline
+			}
+		}
+
+		return nil
+	}
+
+	// Initialize new pipelines (possibly with a takeover)
+	for _, pipeline := range newMux.pipelines {
+		oldPipeline := stealPipeline(pipeline.Address())
+		if oldPipeline != nil {
+			pipeline.Takeover(oldPipeline)
+		}
+
+		pipeline.StartClients()
+	}
+
+	// Shut down any pipelines that were not taken over
+	for e := oldPipelines.Front(); e != nil; e = e.Next() {
+		pipeline, ok := e.Value.(*memdPipeline)
+		if !ok {
+			logErrorf("Failed to cast old pipeline")
+			continue
+		}
+
+		err := pipeline.Close()
+		if err != nil {
+			logErrorf("Failed to properly close abandoned pipeline (%s)", err)
+		}
+	}
+
+	if oldMux != nil && oldMux.deadPipe != nil {
+		err := oldMux.deadPipe.Close()
+		if err != nil {
+			logErrorf("Failed to properly close abandoned dead pipe (%s)", err)
+		}
+	}
 }
 
 type pipelineIterator struct {
@@ -381,7 +486,7 @@ type pipelineIterator struct {
 }
 
 func (mux *kvMux) PipelineIterator() (*pipelineIterator, error) {
-	clientMux := mux.Get()
+	clientMux := mux.GetState()
 	if clientMux == nil {
 		return nil, errShutdown
 	}
@@ -409,5 +514,4 @@ func (pi *pipelineIterator) Next() *memdPipeline {
 	pi.iterations++
 	pi.idx = (pi.idx + 1) % pi.len
 	return pi.pipelines[pi.idx]
-
 }

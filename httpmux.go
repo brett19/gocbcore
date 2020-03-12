@@ -46,9 +46,6 @@ func (mux *httpMux) Clear() *httpClientMux {
 func (mux *httpMux) ApplyRoutingConfig(cfg *routeConfig) {
 	oldHTTPMux := mux.Get()
 
-	logDebugf("Switching http mux routing data (update)...")
-	logDebugf("New Routing Data:\n%s", cfg.DebugString())
-
 	newHTTPMux := newHTTPClientMux(cfg, mux.breakerCfg)
 
 	mux.Update(oldHTTPMux, newHTTPMux)

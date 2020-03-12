@@ -200,7 +200,7 @@ func (agent *Agent) zombieLogger(interval time.Duration, sampleSize int) {
 		// are cleaned up promptly after agent shutdown.
 		<-time.After(1 * time.Second)
 
-		clientMux := agent.kvMux.Get()
+		clientMux := agent.kvMux.GetState()
 		if clientMux == nil {
 			// If the muxer is gone, the agent shut down and we should close
 			return

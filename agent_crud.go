@@ -1107,7 +1107,7 @@ type StatsExCallback func(*StatsResult, error)
 func (agent *Agent) StatsEx(opts StatsOptions, cb StatsExCallback) (PendingOp, error) {
 	tracer := agent.createOpTrace("StatsEx", opts.TraceContext)
 
-	muxer := agent.kvMux.Get()
+	muxer := agent.kvMux.GetState()
 	if muxer == nil {
 		tracer.Finish()
 		return nil, errShutdown

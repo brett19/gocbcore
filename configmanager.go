@@ -42,6 +42,9 @@ func (cm *configManager) OnNewConfig(cfg *cfgBucket) {
 		return
 	}
 
+	logDebugf("Sending out mux routing data (update)...")
+	logDebugf("New Routing Data:\n%s", routeCfg.DebugString())
+
 	for _, watcher := range cm.cfgChangeWatchers {
 		watcher(routeCfg)
 	}
