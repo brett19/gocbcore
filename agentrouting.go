@@ -256,9 +256,12 @@ func (agent *Agent) bootstrap(client *memdClient, deadline time.Time) error {
 	logDebugf("Client Features: %+v", features)
 	logDebugf("Server Features: %+v", client.features)
 
-	if client.SupportsFeature(FeatureCollections) {
+	collectionsSupported := client.SupportsFeature(FeatureCollections)
+	if collectionsSupported {
 		client.conn.EnableCollections(true)
 	}
+	agent.updateCollectionsSupport(collectionsSupported)
+	agent.updateDurabilitySupport(client.SupportsFeature(FeatureEnhancedDurability))
 
 	if client.SupportsFeature(FeatureDurations) {
 		client.conn.EnableFramingExtras(true)
