@@ -74,10 +74,6 @@ type Agent struct {
 	durabilityLevelStatus uint32
 	supportsCollections   uint32
 
-	cachedClients       map[string]*memdClient
-	cachedClientsLock   sync.Mutex
-	cachedHTTPEndpoints []string
-
 	defaultRetryStrategy RetryStrategy
 
 	circuitBreakerConfig CircuitBreakerConfig
@@ -259,7 +255,6 @@ func createAgent(config *AgentConfig, initFn memdInitFunc) (*Agent, error) {
 		dcpPriority:           config.DcpAgentPriority,
 		useDcpExpiry:          config.UseDCPExpiry,
 		durabilityLevelStatus: uint32(durabilityLevelStatusUnknown),
-		cachedClients:         make(map[string]*memdClient),
 		defaultRetryStrategy:  config.DefaultRetryStrategy,
 		circuitBreakerConfig:  config.CircuitBreakerConfig,
 
@@ -457,25 +452,6 @@ func (agent *Agent) disconnectClient(client *memdClient) {
 	}
 }
 
-func (agent *Agent) cacheClient(client *memdClient) {
-	agent.cachedClientsLock.Lock()
-	agent.cachedClients[client.Address()] = client
-	agent.cachedClientsLock.Unlock()
-}
-
-func (agent *Agent) getCachedClient(address string) *memdClient {
-	agent.cachedClientsLock.Lock()
-	cli, ok := agent.cachedClients[address]
-	if !ok {
-		agent.cachedClientsLock.Unlock()
-		return nil
-	}
-	delete(agent.cachedClients, address)
-	agent.cachedClientsLock.Unlock()
-
-	return cli
-}
-
 func (agent *Agent) firstConfigApplied(_ *routeConfig) {
 	agent.cfgManager.RemoveConfigWatcher(agent.firstConfigApplied)
 	close(agent.firstConfigSeenCh)
@@ -493,16 +469,6 @@ func (agent *Agent) onInvalidConfig() {
 func (agent *Agent) Close() error {
 	routeCloseErr := agent.kvMux.Close()
 	agent.pollerController.Stop()
-
-	agent.cachedClientsLock.Lock()
-	for _, cli := range agent.cachedClients {
-		err := cli.Close()
-		if err != nil {
-			logDebugf("Failed to close client %p", cli)
-		}
-	}
-	agent.cachedClients = make(map[string]*memdClient)
-	agent.cachedClientsLock.Unlock()
 
 	// Wait for our external looper goroutines to finish, note that if the
 	// specific looper wasn't used, it will be a nil value otherwise it

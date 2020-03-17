@@ -339,12 +339,6 @@ func (agent *Agent) helloFeatures() []HelloFeature {
 }
 
 func (agent *Agent) slowDialMemdClient(address string) (*memdClient, error) {
-	cached := agent.getCachedClient(address)
-	if cached != nil {
-		logDebugf("Returning cached client %p for %s", cached, address)
-		return cached, nil
-	}
-
 	agent.serverFailuresLock.Lock()
 	failureTime := agent.serverFailures[address]
 	agent.serverFailuresLock.Unlock()
