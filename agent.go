@@ -83,6 +83,7 @@ type Agent struct {
 	n1qlCmpt      *n1qlQueryComponent
 	analyticsCmpt *analyticsQueryComponent
 	searchCmpt    *searchQueryComponent
+	viewCmpt      *viewQueryComponent
 	waitCmpt      *waitUntilConfigComponent
 
 	agentConfig
@@ -311,6 +312,7 @@ func createAgent(config *AgentConfig, initFn memdInitFunc) (*Agent, error) {
 	c.n1qlCmpt = newN1QLQueryComponent(c.httpComponent, c.cfgManager)
 	c.analyticsCmpt = newAnalyticsQueryComponent(c.httpComponent)
 	c.searchCmpt = newSearchQueryComponent(c.httpComponent)
+	c.viewCmpt = newViewQueryComponent(c.httpComponent)
 	c.waitCmpt = newWaitUntilConfigComponent(c.cfgManager)
 
 	if config.KVConnectTimeout > 0 {
