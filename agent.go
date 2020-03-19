@@ -98,10 +98,6 @@ func (agent *Agent) HTTPClient() *http.Client {
 	return agent.httpComponent.cli
 }
 
-func (agent *Agent) getErrorMap() *kvErrorMap {
-	return agent.kvErrorMap.Get()
-}
-
 // AuthFunc is invoked by the agent to authenticate a client. This function returns two channels to allow for for multi-stage
 // authentication processes (such as SCRAM). The continue callback should be called when further asynchronous bootstrapping
 // requests (such as select bucket) can be sent. The completed callback should be called when authentication is completed,
