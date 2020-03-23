@@ -72,29 +72,6 @@ func findNextAuthMechanism(authMechanisms []AuthMechanism, serverAuthMechanisms 
 	return false, "", authMechanisms
 }
 
-func (agent *Agent) storeErrorMap(mapBytes []byte, client *memdClient) {
-	errMap, err := parseKvErrorMap(mapBytes)
-	if err != nil {
-		logDebugf("Failed to parse kv error map (%s)", err)
-		return
-	}
-
-	logDebugf("Fetched error map: %+v", errMap)
-
-	// Check if we need to switch the agent itself to a better
-	//  error map revision.
-	for {
-		origMap := agent.kvErrorMap.Get()
-		if origMap != nil && errMap.Revision < origMap.Revision {
-			break
-		}
-
-		if agent.kvErrorMap.Update(origMap, errMap) {
-			break
-		}
-	}
-}
-
 func (agent *Agent) bootstrap(client *memdClient, deadline time.Time) error {
 	sclient := syncClient{
 		client: client,
@@ -169,7 +146,7 @@ func (agent *Agent) bootstrap(client *memdClient, deadline time.Time) error {
 
 	errMapResp := <-errMapCh
 	if errMapResp.Err == nil {
-		agent.storeErrorMap(errMapResp.Bytes, client)
+		agent.errMapManager.StoreErrorMap(errMapResp.Bytes)
 	} else {
 		logDebugf("Failed to fetch kv error map (%s)", errMapResp.Err)
 	}
