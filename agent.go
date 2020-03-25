@@ -8,49 +8,27 @@ import (
 	"fmt"
 	"net"
 	"net/http"
-	"sync"
 	"sync/atomic"
 	"time"
 
 	"golang.org/x/net/http2"
 )
 
-type agentConfig struct {
-	useMutationTokens    bool
-	useCompression       bool
-	useDurations         bool
-	disableDecompression bool
-	useCollections       bool
-
-	compressionMinSize  int
-	compressionMinRatio float64
-
-	noRootTraceSpans bool
-}
-
 // Agent represents the base client handling connections to a Couchbase Server.
 // This is used internally by the higher level classes for communicating with the cluster,
 // it can also be used to perform more advanced operations with a cluster.
 type Agent struct {
-	clientID       string
-	userAgent      string
-	auth           AuthProvider
-	authHandler    authFuncHandler
-	authMechanisms []AuthMechanism
-	bucketName     string
-	bucketLock     sync.Mutex
-	tlsConfig      *tls.Config
-	initFn         memdInitFunc
+	clientID   string
+	bucketName string
+	tlsConfig  *tls.Config
+	initFn     memdInitFunc
 
-	tracer RequestTracer
+	tracer           RequestTracer
+	noRootTraceSpans bool
 
-	httpComponent *httpComponent
-
-	cidMgr *collectionIDManager
-
+	httpComponent        *httpComponent
+	cidMgr               *collectionIDManager
 	defaultRetryStrategy RetryStrategy
-
-	circuitBreakerConfig CircuitBreakerConfig
 
 	cfgManager       *configManager
 	pollerController *pollerController
@@ -65,8 +43,6 @@ type Agent struct {
 	viewCmpt         *viewQueryComponent
 	waitCmpt         *waitUntilConfigComponent
 	zombieLoggerCmpt *zombieLoggerComponent
-
-	agentConfig
 }
 
 // !!!!UNSURE WHY THESE EXIST!!!!
@@ -210,29 +186,28 @@ func createAgent(config *AgentConfig, initFn memdInitFunc) (*Agent, error) {
 	}
 
 	c := &Agent{
-		clientID:   formatCbUID(randomCbUID()),
-		userAgent:  config.UserAgent,
-		bucketName: config.BucketName,
-		auth:       config.Auth,
-		tlsConfig:  tlsConfig,
-		initFn:     initFn,
-		tracer:     tracer,
+		clientID:         formatCbUID(randomCbUID()),
+		bucketName:       config.BucketName,
+		tlsConfig:        tlsConfig,
+		initFn:           initFn,
+		tracer:           tracer,
+		noRootTraceSpans: config.NoRootTraceSpans,
 
 		defaultRetryStrategy: config.DefaultRetryStrategy,
-		circuitBreakerConfig: config.CircuitBreakerConfig,
-		errMapManager:        newErrMapManager(config.BucketName),
 
-		agentConfig: agentConfig{
-			useMutationTokens:    config.UseMutationTokens,
-			disableDecompression: config.DisableDecompression,
-			useCompression:       config.UseCompression,
-			useCollections:       config.UseCollections,
-			compressionMinSize:   32,
-			compressionMinRatio:  0.83,
-			useDurations:         config.UseDurations,
-			noRootTraceSpans:     config.NoRootTraceSpans,
-		},
+		errMapManager: newErrMapManager(config.BucketName),
 	}
+
+	circuitBreakerConfig := config.CircuitBreakerConfig
+	auth := config.Auth
+	userAgent := config.UserAgent
+	useMutationTokens := config.UseMutationTokens
+	disableDecompression := config.DisableDecompression
+	useCompression := config.UseCompression
+	useCollections := config.UseCollections
+	compressionMinSize := 32
+	compressionMinRatio := 0.83
+	useDurations := config.UseDurations
 
 	kvConnectTimeout := 7000 * time.Millisecond
 	if config.KVConnectTimeout > 0 {
@@ -272,30 +247,28 @@ func createAgent(config *AgentConfig, initFn memdInitFunc) (*Agent, error) {
 	}
 
 	if config.CompressionMinSize > 0 {
-		c.compressionMinSize = config.CompressionMinSize
+		compressionMinSize = config.CompressionMinSize
 	}
 	if config.CompressionMinRatio > 0 {
-		c.compressionMinRatio = config.CompressionMinRatio
-		if c.compressionMinRatio >= 1.0 {
-			c.compressionMinRatio = 1.0
+		compressionMinRatio = config.CompressionMinRatio
+		if compressionMinRatio >= 1.0 {
+			compressionMinRatio = 1.0
 		}
 	}
 	if c.defaultRetryStrategy == nil {
 		c.defaultRetryStrategy = newFailFastRetryStrategy()
 	}
-	c.authMechanisms = []AuthMechanism{
+	authMechanisms := []AuthMechanism{
 		ScramSha512AuthMechanism,
 		ScramSha256AuthMechanism,
 		ScramSha1AuthMechanism}
 
 	// PLAIN authentication is only supported over TLS
 	if config.UseTLS {
-		c.authMechanisms = append(c.authMechanisms, PlainAuthMechanism)
+		authMechanisms = append(authMechanisms, PlainAuthMechanism)
 	}
 
-	if c.authHandler == nil {
-		c.authHandler = c.buildAuthHandler()
-	}
+	authHandler := c.buildAuthHandler(auth)
 
 	var httpEpList []string
 	for _, hostPort := range config.HTTPAddrs {
@@ -336,24 +309,24 @@ func createAgent(config *AgentConfig, initFn memdInitFunc) (*Agent, error) {
 			KVConnectTimeout:     kvConnectTimeout,
 			ClientID:             c.clientID,
 			TLSConfig:            c.tlsConfig,
-			CompressionMinSize:   c.compressionMinSize,
-			CompressionMinRatio:  c.compressionMinRatio,
-			DisableDecompression: c.disableDecompression,
+			CompressionMinSize:   compressionMinSize,
+			CompressionMinRatio:  compressionMinRatio,
+			DisableDecompression: disableDecompression,
 		},
 		bootstrapProps{
 			helloProps: helloProps{
-				CollectionsEnabled:    c.useCollections,
-				MutationTokensEnabled: c.useMutationTokens,
-				CompressionEnabled:    c.useCompression,
-				DurationsEnabled:      c.useDurations,
+				CollectionsEnabled:    useCollections,
+				MutationTokensEnabled: useMutationTokens,
+				CompressionEnabled:    useCompression,
+				DurationsEnabled:      useDurations,
 			},
 			Bucket:         c.bucketName,
-			UserAgent:      c.userAgent,
-			AuthMechanisms: c.authMechanisms,
-			AuthHandler:    c.authHandler,
+			UserAgent:      userAgent,
+			AuthMechanisms: authMechanisms,
+			AuthHandler:    authHandler,
 			ErrMapManager:  c.errMapManager,
 		},
-		c.circuitBreakerConfig,
+		circuitBreakerConfig,
 		c.zombieLoggerCmpt,
 		c.tracer,
 		initFn,
@@ -362,7 +335,7 @@ func createAgent(config *AgentConfig, initFn memdInitFunc) (*Agent, error) {
 		kvMuxProps{
 			QueueSize:          maxQueueSize,
 			PoolSize:           kvPoolSize,
-			CollectionsEnabled: c.useCollections,
+			CollectionsEnabled: useCollections,
 		},
 		c.cfgManager,
 		c.errMapManager,
@@ -374,8 +347,8 @@ func createAgent(config *AgentConfig, initFn memdInitFunc) (*Agent, error) {
 		MaxQueueSize:     config.MaxQueueSize,
 		NoRootTraceSpans: config.NoRootTraceSpans,
 	}, c.kvMux, c.tracer)
-	c.httpMux = newHTTPMux(c.circuitBreakerConfig, c.cfgManager)
-	c.httpComponent = newHTTPComponent(httpCli, c.httpMux, c.auth, c.userAgent)
+	c.httpMux = newHTTPMux(circuitBreakerConfig, c.cfgManager)
+	c.httpComponent = newHTTPComponent(httpCli, c.httpMux, auth, userAgent)
 	c.pollerController = newPollerController(
 		newCCCPConfigController(
 			cccpPollerProperties{
@@ -386,7 +359,7 @@ func createAgent(config *AgentConfig, initFn memdInitFunc) (*Agent, error) {
 			c.cfgManager,
 		),
 		newHTTPConfigController(
-			c.bucket(),
+			c.bucketName,
 			httpPollerProperties{
 				httpComponent:        c.httpComponent,
 				confHTTPRetryDelay:   confHTTPRetryDelay,
@@ -422,9 +395,9 @@ func createAgent(config *AgentConfig, initFn memdInitFunc) (*Agent, error) {
 	return c, nil
 }
 
-func (agent *Agent) buildAuthHandler() authFuncHandler {
+func (agent *Agent) buildAuthHandler(auth AuthProvider) authFuncHandler {
 	return func(client AuthClient, deadline time.Time, mechanism AuthMechanism) authFunc {
-		creds, err := getKvAuthCreds(agent.auth, client.Address())
+		creds, err := getKvAuthCreds(auth, client.Address())
 		if err != nil {
 			return nil
 		}
@@ -590,16 +563,4 @@ func (agent *Agent) UsingGCCCP() bool {
 // WaitUntilReady returns whether or not the Agent has seen a valid cluster config.
 func (agent *Agent) WaitUntilReady(cb func()) (PendingOp, error) {
 	return agent.waitCmpt.WaitUntilFirstConfig(cb)
-}
-
-func (agent *Agent) bucket() string {
-	agent.bucketLock.Lock()
-	defer agent.bucketLock.Unlock()
-	return agent.bucketName
-}
-
-func (agent *Agent) setBucket(bucket string) {
-	agent.bucketLock.Lock()
-	defer agent.bucketLock.Unlock()
-	agent.bucketName = bucket
 }
