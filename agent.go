@@ -44,16 +44,7 @@ type Agent struct {
 
 	tracer RequestTracer
 
-	serverFailuresLock sync.Mutex
-	serverFailures     map[string]time.Time
-
 	httpComponent *httpComponent
-
-	kvConnectTimeout  time.Duration
-	serverWaitTimeout time.Duration
-
-	dcpPriority  DcpAgentPriority
-	useDcpExpiry bool
 
 	cidMgr *collectionIDManager
 
@@ -78,15 +69,16 @@ type Agent struct {
 	agentConfig
 }
 
+// !!!!UNSURE WHY THESE EXIST!!!!
 // ServerConnectTimeout gets the timeout for each server connection, including all authentication steps.
-func (agent *Agent) ServerConnectTimeout() time.Duration {
-	return agent.kvConnectTimeout
-}
-
-// SetServerConnectTimeout sets the timeout for each server connection.
-func (agent *Agent) SetServerConnectTimeout(timeout time.Duration) {
-	agent.kvConnectTimeout = timeout
-}
+// func (agent *Agent) ServerConnectTimeout() time.Duration {
+// 	return agent.kvConnectTimeout
+// }
+//
+// // SetServerConnectTimeout sets the timeout for each server connection.
+// func (agent *Agent) SetServerConnectTimeout(timeout time.Duration) {
+// 	agent.kvConnectTimeout = timeout
+// }
 
 // HTTPClient returns a pre-configured HTTP Client for communicating with
 // Couchbase Server.  You must still specify authentication information
@@ -109,7 +101,7 @@ type authFuncHandler func(client AuthClient, deadline time.Time, mechanism AuthM
 
 // CreateAgent creates an agent for performing normal operations.
 func CreateAgent(config *AgentConfig) (*Agent, error) {
-	initFn := func(client *syncClient, deadline time.Time, agent *Agent) error {
+	initFn := func(client *syncClient, deadline time.Time) error {
 		return nil
 	}
 
@@ -120,7 +112,7 @@ func CreateAgent(config *AgentConfig) (*Agent, error) {
 func CreateDcpAgent(config *AgentConfig, dcpStreamName string, openFlags DcpOpenFlag) (*Agent, error) {
 	// We wrap the authorization system to force DCP channel opening
 	//   as part of the "initialization" for any servers.
-	initFn := func(client *syncClient, deadline time.Time, agent *Agent) error {
+	initFn := func(client *syncClient, deadline time.Time) error {
 		if err := client.ExecOpenDcpConsumer(dcpStreamName, openFlags, deadline); err != nil {
 			return err
 		}
@@ -128,7 +120,7 @@ func CreateDcpAgent(config *AgentConfig, dcpStreamName string, openFlags DcpOpen
 			return err
 		}
 		var priority string
-		switch agent.dcpPriority {
+		switch config.DcpAgentPriority {
 		case DcpAgentPriorityLow:
 			priority = "low"
 		case DcpAgentPriorityMed:
@@ -140,7 +132,7 @@ func CreateDcpAgent(config *AgentConfig, dcpStreamName string, openFlags DcpOpen
 			return err
 		}
 
-		if agent.useDcpExpiry {
+		if config.UseDCPExpiry {
 			if err := client.ExecDcpControl("enable_expiry_opcode", "true", deadline); err != nil {
 				return err
 			}
@@ -226,11 +218,6 @@ func createAgent(config *AgentConfig, initFn memdInitFunc) (*Agent, error) {
 		initFn:     initFn,
 		tracer:     tracer,
 
-		serverFailures:       make(map[string]time.Time),
-		kvConnectTimeout:     7000 * time.Millisecond,
-		serverWaitTimeout:    5 * time.Second,
-		dcpPriority:          config.DcpAgentPriority,
-		useDcpExpiry:         config.UseDCPExpiry,
 		defaultRetryStrategy: config.DefaultRetryStrategy,
 		circuitBreakerConfig: config.CircuitBreakerConfig,
 		errMapManager:        newErrMapManager(config.BucketName),
@@ -247,9 +234,12 @@ func createAgent(config *AgentConfig, initFn memdInitFunc) (*Agent, error) {
 		},
 	}
 
+	kvConnectTimeout := 7000 * time.Millisecond
 	if config.KVConnectTimeout > 0 {
-		c.kvConnectTimeout = config.KVConnectTimeout
+		kvConnectTimeout = config.KVConnectTimeout
 	}
+
+	serverWaitTimeout := 5 * time.Second
 
 	kvPoolSize := 1
 	if config.KvPoolSize > 0 {
@@ -293,6 +283,19 @@ func createAgent(config *AgentConfig, initFn memdInitFunc) (*Agent, error) {
 	if c.defaultRetryStrategy == nil {
 		c.defaultRetryStrategy = newFailFastRetryStrategy()
 	}
+	c.authMechanisms = []AuthMechanism{
+		ScramSha512AuthMechanism,
+		ScramSha256AuthMechanism,
+		ScramSha1AuthMechanism}
+
+	// PLAIN authentication is only supported over TLS
+	if config.UseTLS {
+		c.authMechanisms = append(c.authMechanisms, PlainAuthMechanism)
+	}
+
+	if c.authHandler == nil {
+		c.authHandler = c.buildAuthHandler()
+	}
 
 	var httpEpList []string
 	for _, hostPort := range config.HTTPAddrs {
@@ -301,6 +304,20 @@ func createAgent(config *AgentConfig, initFn memdInitFunc) (*Agent, error) {
 		} else {
 			httpEpList = append(httpEpList, fmt.Sprintf("https://%s", hostPort))
 		}
+	}
+
+	if config.UseZombieLogger {
+		zombieLoggerInterval := 10 * time.Second
+		zombieLoggerSampleSize := 10
+		if config.ZombieLoggerInterval > 0 {
+			zombieLoggerInterval = config.ZombieLoggerInterval
+		}
+		if config.ZombieLoggerSampleSize > 0 {
+			zombieLoggerSampleSize = config.ZombieLoggerSampleSize
+		}
+
+		c.zombieLoggerCmpt = newZombieLoggerComponent(zombieLoggerInterval, zombieLoggerSampleSize)
+		go c.zombieLoggerCmpt.Start()
 	}
 
 	c.cfgManager = newConfigManager(
@@ -313,16 +330,44 @@ func createAgent(config *AgentConfig, initFn memdInitFunc) (*Agent, error) {
 		c.onInvalidConfig,
 	)
 
+	dialer := newMemdClientCreatorComponent(
+		memdClientDialerProps{
+			ServerWaitTimeout:    serverWaitTimeout,
+			KVConnectTimeout:     kvConnectTimeout,
+			ClientID:             c.clientID,
+			TLSConfig:            c.tlsConfig,
+			CompressionMinSize:   c.compressionMinSize,
+			CompressionMinRatio:  c.compressionMinRatio,
+			DisableDecompression: c.disableDecompression,
+		},
+		bootstrapProps{
+			helloProps: helloProps{
+				CollectionsEnabled:    c.useCollections,
+				MutationTokensEnabled: c.useMutationTokens,
+				CompressionEnabled:    c.useCompression,
+				DurationsEnabled:      c.useDurations,
+			},
+			Bucket:         c.bucketName,
+			UserAgent:      c.userAgent,
+			AuthMechanisms: c.authMechanisms,
+			AuthHandler:    c.authHandler,
+			ErrMapManager:  c.errMapManager,
+		},
+		c.circuitBreakerConfig,
+		c.zombieLoggerCmpt,
+		c.tracer,
+		initFn,
+	)
 	c.kvMux = newKVMux(
 		kvMuxProps{
-			queueSize:          maxQueueSize,
-			poolSize:           kvPoolSize,
-			collectionsEnabled: c.useCollections,
+			QueueSize:          maxQueueSize,
+			PoolSize:           kvPoolSize,
+			CollectionsEnabled: c.useCollections,
 		},
 		c.cfgManager,
 		c.errMapManager,
 		c.tracer,
-		c.slowDialMemdClient,
+		dialer,
 	)
 	c.cidMgr = newCollectionIDManager(collectionIDProps{
 		Bucket:           config.BucketName,
@@ -361,34 +406,6 @@ func createAgent(config *AgentConfig, initFn memdInitFunc) (*Agent, error) {
 	c.searchCmpt = newSearchQueryComponent(c.httpComponent)
 	c.viewCmpt = newViewQueryComponent(c.httpComponent)
 	c.waitCmpt = newWaitUntilConfigComponent(c.cfgManager)
-
-	c.authMechanisms = []AuthMechanism{
-		ScramSha512AuthMechanism,
-		ScramSha256AuthMechanism,
-		ScramSha1AuthMechanism}
-
-	// PLAIN authentication is only supported over TLS
-	if config.UseTLS {
-		c.authMechanisms = append(c.authMechanisms, PlainAuthMechanism)
-	}
-
-	if c.authHandler == nil {
-		c.authHandler = c.buildAuthHandler()
-	}
-
-	if config.UseZombieLogger {
-		zombieLoggerInterval := 10 * time.Second
-		zombieLoggerSampleSize := 10
-		if config.ZombieLoggerInterval > 0 {
-			zombieLoggerInterval = config.ZombieLoggerInterval
-		}
-		if config.ZombieLoggerSampleSize > 0 {
-			zombieLoggerSampleSize = config.ZombieLoggerSampleSize
-		}
-
-		c.zombieLoggerCmpt = newZombieLoggerComponent(zombieLoggerInterval, zombieLoggerSampleSize)
-		go c.zombieLoggerCmpt.Start()
-	}
 
 	// Kick everything off.
 	cfg := &routeConfig{
