@@ -19,8 +19,8 @@ func newStatsComponent(kvMux *kvMux, defaultRetry RetryStrategy, tracer *tracerC
 	}
 }
 
-func (sc *statsComponent) Stats(opts StatsOptions, cb StatsExCallback) (PendingOp, error) {
-	tracer := sc.tracer.CreateOpTrace("StatsEx", opts.TraceContext)
+func (sc *statsComponent) Stats(opts StatsOptions, cb StatsCallback) (PendingOp, error) {
+	tracer := sc.tracer.CreateOpTrace("Stats", opts.TraceContext)
 
 	muxer := sc.kvMux.GetState()
 	if muxer == nil {
@@ -169,16 +169,16 @@ type SingleServerStats struct {
 	Error error
 }
 
-// StatsTarget is used for providing a specific target to the StatsEx operation.
+// StatsTarget is used for providing a specific target to the Stats operation.
 type StatsTarget interface {
 }
 
-// VBucketIDStatsTarget indicates that a specific vbucket should be targeted by the StatsEx operation.
+// VBucketIDStatsTarget indicates that a specific vbucket should be targeted by the Stats operation.
 type VBucketIDStatsTarget struct {
 	VbID uint16
 }
 
-// StatsOptions encapsulates the parameters for a StatsEx operation.
+// StatsOptions encapsulates the parameters for a Stats operation.
 type StatsOptions struct {
 	Key string
 	// Target indicates that something specific should be targeted by the operation. If left nil
@@ -191,10 +191,7 @@ type StatsOptions struct {
 	TraceContext RequestSpanContext
 }
 
-// StatsResult encapsulates the result of a StatsEx operation.
+// StatsResult encapsulates the result of a Stats operation.
 type StatsResult struct {
 	Servers map[string]SingleServerStats
 }
-
-// StatsExCallback is invoked upon completion of a StatsEx operation.
-type StatsExCallback func(*StatsResult, error)

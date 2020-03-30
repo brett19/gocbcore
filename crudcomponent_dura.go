@@ -5,8 +5,8 @@ import (
 	"time"
 )
 
-func (crud *crudComponent) Observe(opts ObserveOptions, cb ObserveExCallback) (PendingOp, error) {
-	tracer := crud.tracer.CreateOpTrace("ObserveEx", opts.TraceContext)
+func (crud *crudComponent) Observe(opts ObserveOptions, cb ObserveCallback) (PendingOp, error) {
+	tracer := crud.tracer.CreateOpTrace("Observe", opts.TraceContext)
 
 	if crud.cidMgr.BucketType() != bktTypeCouchbase {
 		tracer.Finish()
@@ -83,8 +83,8 @@ func (crud *crudComponent) Observe(opts ObserveOptions, cb ObserveExCallback) (P
 	return crud.cidMgr.Dispatch(req)
 }
 
-func (crud *crudComponent) ObserveVb(opts ObserveVbOptions, cb ObserveVbExCallback) (PendingOp, error) {
-	tracer := crud.tracer.CreateOpTrace("ObserveVbEx", nil)
+func (crud *crudComponent) ObserveVb(opts ObserveVbOptions, cb ObserveVbCallback) (PendingOp, error) {
+	tracer := crud.tracer.CreateOpTrace("ObserveVb", nil)
 
 	if crud.cidMgr.BucketType() != bktTypeCouchbase {
 		tracer.Finish()

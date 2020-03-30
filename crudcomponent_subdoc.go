@@ -5,8 +5,23 @@ import (
 	"time"
 )
 
-func (crud *crudComponent) LookupIn(opts LookupInOptions, cb LookupInExCallback) (PendingOp, error) {
-	tracer := crud.tracer.CreateOpTrace("LookupInEx", opts.TraceContext)
+type subdocOpList struct {
+	ops     []SubDocOp
+	indexes []int
+}
+
+func (sol *subdocOpList) Prepend(op SubDocOp, index int) {
+	sol.ops = append([]SubDocOp{op}, sol.ops...)
+	sol.indexes = append([]int{index}, sol.indexes...)
+}
+
+func (sol *subdocOpList) Append(op SubDocOp, index int) {
+	sol.ops = append(sol.ops, op)
+	sol.indexes = append(sol.indexes, index)
+}
+
+func (crud *crudComponent) LookupIn(opts LookupInOptions, cb LookupInCallback) (PendingOp, error) {
+	tracer := crud.tracer.CreateOpTrace("LookupIn", opts.TraceContext)
 
 	results := make([]SubDocResult, len(opts.Ops))
 	var subdocs subdocOpList
@@ -127,8 +142,8 @@ func (crud *crudComponent) LookupIn(opts LookupInOptions, cb LookupInExCallback)
 	return crud.cidMgr.Dispatch(req)
 }
 
-func (crud *crudComponent) MutateIn(opts MutateInOptions, cb MutateInExCallback) (PendingOp, error) {
-	tracer := crud.tracer.CreateOpTrace("MutateInEx", opts.TraceContext)
+func (crud *crudComponent) MutateIn(opts MutateInOptions, cb MutateInCallback) (PendingOp, error) {
+	tracer := crud.tracer.CreateOpTrace("MutateIn", opts.TraceContext)
 
 	results := make([]SubDocResult, len(opts.Ops))
 	var subdocs subdocOpList

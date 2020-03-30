@@ -25,7 +25,7 @@ type pingOp struct {
 	subops    []pingSubOp
 	remaining int32
 	results   []PingResult
-	callback  PingKvExCallback
+	callback  PingKvCallback
 	configRev int64
 }
 
