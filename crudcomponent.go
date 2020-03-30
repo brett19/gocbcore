@@ -72,7 +72,7 @@ func (crud *crudComponent) Get(opts GetOptions, cb GetCallback) (PendingOp, erro
 
 	if !opts.Deadline.IsZero() {
 		req.Timer = time.AfterFunc(opts.Deadline.Sub(time.Now()), func() {
-			req.Cancel(errUnambiguousTimeout)
+			req.cancelWithCallback(errUnambiguousTimeout)
 		})
 	}
 
@@ -133,7 +133,7 @@ func (crud *crudComponent) GetAndTouch(opts GetAndTouchOptions, cb GetAndTouchCa
 
 	if !opts.Deadline.IsZero() {
 		req.Timer = time.AfterFunc(opts.Deadline.Sub(time.Now()), func() {
-			req.Cancel(errAmbiguousTimeout)
+			req.cancelWithCallback(errAmbiguousTimeout)
 		})
 	}
 
@@ -194,7 +194,7 @@ func (crud *crudComponent) GetAndLock(opts GetAndLockOptions, cb GetAndLockCallb
 
 	if !opts.Deadline.IsZero() {
 		req.Timer = time.AfterFunc(opts.Deadline.Sub(time.Now()), func() {
-			req.Cancel(errAmbiguousTimeout)
+			req.cancelWithCallback(errAmbiguousTimeout)
 		})
 	}
 
@@ -255,7 +255,7 @@ func (crud *crudComponent) GetOneReplica(opts GetOneReplicaOptions, cb GetReplic
 
 	if !opts.Deadline.IsZero() {
 		req.Timer = time.AfterFunc(opts.Deadline.Sub(time.Now()), func() {
-			req.Cancel(errUnambiguousTimeout)
+			req.cancelWithCallback(errUnambiguousTimeout)
 		})
 	}
 
@@ -316,7 +316,7 @@ func (crud *crudComponent) Touch(opts TouchOptions, cb TouchCallback) (PendingOp
 
 	if !opts.Deadline.IsZero() {
 		req.Timer = time.AfterFunc(opts.Deadline.Sub(time.Now()), func() {
-			req.Cancel(errAmbiguousTimeout)
+			req.cancelWithCallback(errAmbiguousTimeout)
 		})
 	}
 
@@ -371,7 +371,7 @@ func (crud *crudComponent) Unlock(opts UnlockOptions, cb UnlockCallback) (Pendin
 
 	if !opts.Deadline.IsZero() {
 		req.Timer = time.AfterFunc(opts.Deadline.Sub(time.Now()), func() {
-			req.Cancel(errAmbiguousTimeout)
+			req.cancelWithCallback(errAmbiguousTimeout)
 		})
 	}
 
@@ -439,7 +439,7 @@ func (crud *crudComponent) Delete(opts DeleteOptions, cb DeleteCallback) (Pendin
 
 	if !opts.Deadline.IsZero() {
 		req.Timer = time.AfterFunc(opts.Deadline.Sub(time.Now()), func() {
-			req.Cancel(errAmbiguousTimeout)
+			req.cancelWithCallback(errAmbiguousTimeout)
 		})
 	}
 
@@ -510,7 +510,7 @@ func (crud *crudComponent) store(opName string, opcode commandCode, opts storeOp
 
 	if !opts.Deadline.IsZero() {
 		req.Timer = time.AfterFunc(opts.Deadline.Sub(time.Now()), func() {
-			req.Cancel(errAmbiguousTimeout)
+			req.cancelWithCallback(errAmbiguousTimeout)
 		})
 	}
 
@@ -635,7 +635,7 @@ func (crud *crudComponent) adjoin(opName string, opcode commandCode, opts Adjoin
 
 	if !opts.Deadline.IsZero() {
 		req.Timer = time.AfterFunc(opts.Deadline.Sub(time.Now()), func() {
-			req.Cancel(errAmbiguousTimeout)
+			req.cancelWithCallback(errAmbiguousTimeout)
 		})
 	}
 
@@ -734,7 +734,7 @@ func (crud *crudComponent) counter(opName string, opcode commandCode, opts Count
 
 	if !opts.Deadline.IsZero() {
 		req.Timer = time.AfterFunc(opts.Deadline.Sub(time.Now()), func() {
-			req.Cancel(errAmbiguousTimeout)
+			req.cancelWithCallback(errAmbiguousTimeout)
 		})
 	}
 
@@ -798,7 +798,7 @@ func (crud *crudComponent) GetRandom(opts GetRandomOptions, cb GetRandomCallback
 
 	if !opts.Deadline.IsZero() {
 		req.Timer = time.AfterFunc(opts.Deadline.Sub(time.Now()), func() {
-			req.Cancel(errUnambiguousTimeout)
+			req.cancelWithCallback(errUnambiguousTimeout)
 		})
 	}
 
@@ -866,7 +866,7 @@ func (crud *crudComponent) GetMeta(opts GetMetaOptions, cb GetMetaCallback) (Pen
 
 	if !opts.Deadline.IsZero() {
 		req.Timer = time.AfterFunc(opts.Deadline.Sub(time.Now()), func() {
-			req.Cancel(errUnambiguousTimeout)
+			req.cancelWithCallback(errUnambiguousTimeout)
 		})
 	}
 
@@ -930,7 +930,7 @@ func (crud *crudComponent) SetMeta(opts SetMetaOptions, cb SetMetaCallback) (Pen
 
 	if !opts.Deadline.IsZero() {
 		req.Timer = time.AfterFunc(opts.Deadline.Sub(time.Now()), func() {
-			req.Cancel(errAmbiguousTimeout)
+			req.cancelWithCallback(errAmbiguousTimeout)
 		})
 	}
 
@@ -994,7 +994,7 @@ func (crud *crudComponent) DeleteMeta(opts DeleteMetaOptions, cb DeleteMetaCallb
 
 	if !opts.Deadline.IsZero() {
 		req.Timer = time.AfterFunc(opts.Deadline.Sub(time.Now()), func() {
-			req.Cancel(errAmbiguousTimeout)
+			req.cancelWithCallback(errAmbiguousTimeout)
 		})
 	}
 

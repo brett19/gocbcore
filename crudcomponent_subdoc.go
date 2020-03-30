@@ -135,7 +135,7 @@ func (crud *crudComponent) LookupIn(opts LookupInOptions, cb LookupInCallback) (
 
 	if !opts.Deadline.IsZero() {
 		req.Timer = time.AfterFunc(opts.Deadline.Sub(time.Now()), func() {
-			req.Cancel(errUnambiguousTimeout)
+			req.cancelWithCallback(errUnambiguousTimeout)
 		})
 	}
 
@@ -293,7 +293,7 @@ func (crud *crudComponent) MutateIn(opts MutateInOptions, cb MutateInCallback) (
 
 	if !opts.Deadline.IsZero() {
 		req.Timer = time.AfterFunc(opts.Deadline.Sub(time.Now()), func() {
-			req.Cancel(errAmbiguousTimeout)
+			req.cancelWithCallback(errAmbiguousTimeout)
 		})
 	}
 

@@ -141,7 +141,7 @@ func (sc *statsComponent) Stats(opts StatsOptions, cb StatsCallback) (PendingOp,
 
 		if !opts.Deadline.IsZero() {
 			req.Timer = time.AfterFunc(opts.Deadline.Sub(time.Now()), func() {
-				req.Cancel(errAmbiguousTimeout)
+				req.cancelWithCallback(errAmbiguousTimeout)
 			})
 		}
 

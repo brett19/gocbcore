@@ -76,7 +76,7 @@ func (crud *crudComponent) Observe(opts ObserveOptions, cb ObserveCallback) (Pen
 
 	if !opts.Deadline.IsZero() {
 		req.Timer = time.AfterFunc(opts.Deadline.Sub(time.Now()), func() {
-			req.Cancel(errUnambiguousTimeout)
+			req.cancelWithCallback(errUnambiguousTimeout)
 		})
 	}
 
@@ -185,7 +185,7 @@ func (crud *crudComponent) ObserveVb(opts ObserveVbOptions, cb ObserveVbCallback
 
 	if !opts.Deadline.IsZero() {
 		req.Timer = time.AfterFunc(opts.Deadline.Sub(time.Now()), func() {
-			req.Cancel(errUnambiguousTimeout)
+			req.cancelWithCallback(errUnambiguousTimeout)
 		})
 	}
 

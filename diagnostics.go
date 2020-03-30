@@ -29,9 +29,9 @@ type pingOp struct {
 	configRev int64
 }
 
-func (pop *pingOp) Cancel(err error) {
+func (pop *pingOp) Cancel() {
 	for _, subop := range pop.subops {
-		subop.op.Cancel(err)
+		subop.op.Cancel()
 	}
 }
 
