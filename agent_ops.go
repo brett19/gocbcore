@@ -249,6 +249,6 @@ func (agent *Agent) Ping(opts PingOptions, cb PingCallback) (PendingOp, error) {
 // Diagnostics returns diagnostics information about the client.
 // Mainly containing a list of open connections and their current
 // states.
-func (agent *Agent) Diagnostics() (*DiagnosticInfo, error) {
-	return agent.diagnostics.Diagnostics()
+func (agent *Agent) Diagnostics(opts DiagnosticsOptions) (*DiagnosticInfo, error) {
+	return agent.diagnostics.Diagnostics(opts)
 }

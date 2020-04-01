@@ -1257,7 +1257,7 @@ func TestPing(t *testing.T) {
 func TestDiagnostics(t *testing.T) {
 	agent, _ := testGetAgentAndHarness(t)
 
-	report, err := agent.Diagnostics()
+	report, err := agent.Diagnostics(DiagnosticsOptions{})
 	if err != nil {
 		t.Fatalf("Failed to fetch diagnostics: %s", err)
 	}

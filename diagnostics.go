@@ -20,6 +20,23 @@ const (
 	PingStateError PingState = iota
 )
 
+// EndpointState is the current connection state of an endpoint.
+type EndpointState uint32
+
+const (
+	// EndpointStateDisconnected indicates that the endpoint is disconnected.
+	EndpointStateDisconnected EndpointState = iota
+
+	// EndpointStateConnecting indicates that the endpoint is connecting.
+	EndpointStateConnecting EndpointState = iota
+
+	// EndpointStateConnected indicates that the endpoint is connected.
+	EndpointStateConnected EndpointState = iota
+
+	// EndpointStateDisconnecting indicates that the endpoint is disconnecting.
+	EndpointStateDisconnecting EndpointState = iota
+)
+
 // EndpointPingResult contains the results of a ping to a single server.
 type EndpointPingResult struct {
 	Endpoint string
@@ -61,7 +78,7 @@ func (pop *pingOp) handledOneLocked() {
 	}
 }
 
-// PingOptions encapsulates the parameters for a PingKvEx operation.
+// PingOptions encapsulates the parameters for a PingKv operation.
 type PingOptions struct {
 	// Volatile: Tracer API is subject to change.
 	TraceContext RequestSpanContext
@@ -69,10 +86,14 @@ type PingOptions struct {
 	ServiceTypes []ServiceType // Defaults to KV only.
 }
 
-// PingResult encapsulates the result of a PingKvEx operation.
+// PingResult encapsulates the result of a PingKv operation.
 type PingResult struct {
 	ConfigRev int64
 	Services  map[ServiceType][]EndpointPingResult
+}
+
+// DiagnosticsOptions encapsulates the parameters for a Diagnostics operation.
+type DiagnosticsOptions struct {
 }
 
 // MemdConnInfo represents information we know about a particular
@@ -83,6 +104,7 @@ type MemdConnInfo struct {
 	LastActivity time.Time
 	Scope        string
 	ID           string
+	State        EndpointState
 }
 
 // DiagnosticInfo is returned by the Diagnostics method and includes

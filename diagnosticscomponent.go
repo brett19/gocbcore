@@ -200,7 +200,7 @@ func (dc *diagnosticsComponent) Ping(opts PingOptions, cb PingCallback) (Pending
 // Diagnostics returns diagnostics information about the client.
 // Mainly containing a list of open connections and their current
 // states.
-func (dc *diagnosticsComponent) Diagnostics() (*DiagnosticInfo, error) {
+func (dc *diagnosticsComponent) Diagnostics(opts DiagnosticsOptions) (*DiagnosticInfo, error) {
 	for {
 		iter, err := dc.kvMux.PipelineSnapshot()
 		if err != nil {
@@ -232,6 +232,7 @@ func (dc *diagnosticsComponent) Diagnostics() (*DiagnosticInfo, error) {
 					RemoteAddr:   remoteAddr,
 					LastActivity: lastActivity,
 					ID:           fmt.Sprintf("%p", pipecli),
+					State:        pipecli.State(),
 				}
 				if dc.bucket != "" {
 					conn.Scope = redactMetaData(dc.bucket)
