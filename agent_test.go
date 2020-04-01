@@ -1244,7 +1244,7 @@ func TestMetaOps(t *testing.T) {
 func TestPing(t *testing.T) {
 	agent, s := testGetAgentAndHarness(t)
 
-	s.PushOp(agent.PingKv(PingKvOptions{}, func(res *PingKvResult, err error) {
+	s.PushOp(agent.Ping(PingOptions{}, func(res *PingResult, err error) {
 		s.Wrap(func() {
 			if len(res.Services) == 0 {
 				s.Fatalf("Ping report contained no results")
