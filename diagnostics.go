@@ -116,6 +116,7 @@ type MemdConnInfo struct {
 type DiagnosticInfo struct {
 	ConfigRev int64
 	MemdConns []MemdConnInfo
+	State     ClusterState
 }
 
 // ClusterState is used to describe the state of a cluster.

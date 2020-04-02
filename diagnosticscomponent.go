@@ -248,6 +248,21 @@ func (dc *diagnosticsComponent) Diagnostics(opts DiagnosticsOptions) (*Diagnosti
 			return false
 		})
 
+		expected := len(conns)
+		connected := 0
+		for _, conn := range conns {
+			if conn.State == EndpointStateConnected {
+				connected++
+			}
+		}
+
+		state := ClusterStateOffline
+		if connected == expected {
+			state = ClusterStateOnline
+		} else if connected > 1 {
+			state = ClusterStateDegraded
+		}
+
 		endIter, err := dc.kvMux.PipelineSnapshot()
 		if err != nil {
 			return nil, err
@@ -256,6 +271,7 @@ func (dc *diagnosticsComponent) Diagnostics(opts DiagnosticsOptions) (*Diagnosti
 			return &DiagnosticInfo{
 				ConfigRev: iter.RevID(),
 				MemdConns: conns,
+				State:     state,
 			}, nil
 		}
 	}
