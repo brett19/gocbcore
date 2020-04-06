@@ -250,7 +250,7 @@ func createAgent(config *AgentConfig, initFn memdInitFunc) (*Agent, error) {
 		c.onInvalidConfig,
 	)
 
-	dialer := newMemdClientCreatorComponent(
+	dialer := newMemdClientDialerComponent(
 		memdClientDialerProps{
 			ServerWaitTimeout:    serverWaitTimeout,
 			KVConnectTimeout:     kvConnectTimeout,
