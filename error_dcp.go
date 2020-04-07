@@ -2,7 +2,6 @@ package gocbcore
 
 import (
 	"errors"
-	"fmt"
 	"log"
 
 	"github.com/couchbase/gocbcore/v9/memd"
@@ -20,7 +19,6 @@ func makeStreamEndStatusError(code memd.StreamEndStatus) error {
 }
 
 func getStreamEndStatusError(code memd.StreamEndStatus) error {
-	fmt.Println(code)
 	if code == memd.StreamEndOK {
 		return nil
 	}
